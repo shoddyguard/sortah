@@ -67,7 +67,7 @@ jobs:
           path: sortah
       # Step 3: Download all platform archives into the build output directory
       - name: download-artifacts
-        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v4
         with:
           pattern: binary-*
           path: sortah/.tmp/output/
