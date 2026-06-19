@@ -1,1 +1,25 @@
-/target
+# This file is created by a tool, manual changes will be lost unless added to the designated section below.
+
+## Auto generated ignores: ##
+# Paket is used to restore various dependencies (including the Brownserve.PSTools PowerShell module).`nWe deliberately ignore the 'paket.lock' file as our projects are usually not precious about taking the latest versions of packages.
+
+paket.lock
+packages/
+paket-files/
+
+# The temporary directory is used to store build output, log files, redirected output etc. It is recreated by the _init.ps1 script.
+.tmp/
+
+# AI coding tool directories contain local/personal configuration and session data that should not be committed.
+.claude/
+.cursor/
+.aider*
+.continue/
+
+# Cargo build output. Note: Cargo.lock is intentionally NOT ignored for binary applications.
+target/
+
+# Rust backup files created by certain editors.
+**/*.rs.bk
+
+## Manually defined ignores: ##

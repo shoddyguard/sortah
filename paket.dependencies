@@ -1,0 +1,16 @@
+# This file is managed by a tool, manual changes will be lost unless added to the designated section below
+source https://api.nuget.org/v3/index.json
+
+## Auto generated dependencies: ##
+# Brownserve modules used to build and test this module
+nuget Brownserve.PSCommon
+nuget Brownserve.PSSourceControl
+nuget Brownserve.PSBuildTools
+
+# Invoke-Build is used to run our builds
+nuget Invoke-Build
+
+# Pester is used to perform testing on the build scripts and binary smoke tests
+nuget Pester
+
+## Manually defined dependencies: ##

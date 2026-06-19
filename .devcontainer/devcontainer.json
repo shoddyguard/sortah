@@ -1,0 +1,23 @@
+{
+  "name": "Ubuntu",
+  "build": {
+    "args": {
+      "VARIANT": "focal"
+    },
+    "dockerfile": "Dockerfile"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "streetsidesoftware.code-spell-checker",
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+        "ms-vscode.powershell",
+        "EditorConfig.EditorConfig",
+        "DavidAnson.vscode-markdownlint"
+      ],
+      "settings": {}
+    }
+  },
+  "remoteUser": "vscode"
+}

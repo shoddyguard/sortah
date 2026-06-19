@@ -1,0 +1,24 @@
+{
+  "cSpell.language": "en,en-GB",
+  "cSpell.words": [
+    "Brownserve",
+    "paket",
+    "Teamcity",
+    "TMPDIR",
+    "Choco",
+    "CICD",
+    "dedupe",
+    "devcontainer",
+    "mrkdwn",
+    "nugetconfig",
+    "nupkg",
+    "yzhang"
+  ],
+  "powershell.codeFormatting.autoCorrectAliases": true,
+  "powershell.codeFormatting.pipelineIndentationStyle": "IncreaseIndentationAfterEveryPipeline",
+  "powershell.codeFormatting.preset": "Allman",
+  "powershell.codeFormatting.trimWhitespaceAroundPipe": true,
+  "powershell.codeFormatting.useConstantStrings": true,
+  "powershell.codeFormatting.useCorrectCasing": true,
+  "powershell.helpCompletion": "Disabled"
+}

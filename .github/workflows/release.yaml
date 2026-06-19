@@ -1,0 +1,104 @@
+---
+name: release
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  # Build a native binary on each target platform and upload it as a workflow artifact
+  package:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: macos-latest
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      # Step 1: Checkout the repo
+      - name: checkout-repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          path: sortah
+      # Step 2: Build and archive the binary for this platform
+      - name: run-build-script
+        shell: pwsh
+        run: |
+            ./sortah/.build/build.ps1 `
+              -GitHubRepoName 'sortah' `
+              -BranchName     $env:GITHUB_REF `
+              -Build          'Package' `
+              -Target         '${{ matrix.target }}' `
+              -Verbose
+      # Step 3: Upload the archive so the release job can collect it
+      - name: upload-artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: binary-${{ matrix.target }}
+          path: sortah/.tmp/output/
+          if-no-files-found: error
+
+  # Collect all archives and publish a single GitHub release
+  release:
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      # Step 1: Generate a short-lived token from the GitHub App
+      - name: generate-app-token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ secrets.BROWNSERVE_CI_APP_ID }}
+          private-key: ${{ secrets.BROWNSERVE_CI_APP_PRIVATE_KEY }}
+      # Step 2: Checkout the repo
+      - name: checkout-repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          path: sortah
+      # Step 3: Download all platform archives into the build output directory
+      - name: download-artifacts
+        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4
+        with:
+          pattern: binary-*
+          path: sortah/.tmp/output/
+          merge-multiple: true
+      # Step 4: Run the release script
+      - name: run-build-script
+        shell: pwsh
+        env:
+          GitHubToken: ${{ steps.app-token.outputs.token }}
+        run: |
+            $Params = @{
+              BranchName         = $env:GITHUB_REF
+              GitHubRepoName     = 'sortah'
+              Build              = 'Release'
+              PublishTo          = @('GitHub')
+              GitHubReleaseToken = $env:GitHubToken
+              Verbose            = $true
+            }
+            ./sortah/.build/build.ps1 @Params
+      # Step 5: Push a notification to Slack
+      - name: notify-slack
+        shell: pwsh
+        if: ${{ always() }}
+        env:
+          BUILD_NOTIFICATION_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_BUILD }}
+          BUILD_BRANCH: ${{ github.ref }}
+        run: |
+            ./sortah/.build/_init.ps1
+            Send-BuildNotification `
+              -BuildName ${{ github.job }} `
+              -BuildStatus ${{ job.status }} `
+              -Webhook $env:BUILD_NOTIFICATION_WEBHOOK `
+              -RepoBranch $env:BUILD_BRANCH `
+              -RepoName $global:BrownserveRepoName

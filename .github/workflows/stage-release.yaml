@@ -1,0 +1,54 @@
+---
+name: stage-release
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'The type of release to perform'
+        required: true
+        default: 'minor'
+        type: choice
+        options:
+          - major
+          - minor
+          - patch
+
+permissions: {}
+
+jobs:
+  stage-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # Step 1: Generate a short-lived token from the GitHub App
+      - name: generate-app-token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ secrets.BROWNSERVE_CI_APP_ID }}
+          private-key: ${{ secrets.BROWNSERVE_CI_APP_PRIVATE_KEY }}
+      # Step 2: Checkout the repo (full history needed to generate changelog entries from previous release)
+      - name: checkout-repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          path: sortah
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+      # Step 3: Install Rust (needed by UpdateCargoVersion to regenerate Cargo.lock)
+      - name: install-rust
+        run: rustup toolchain install stable --profile minimal
+      # Step 4: Call the build script
+      - name: run-build-script
+        shell: pwsh
+        env:
+          GitHubPAT: ${{ steps.app-token.outputs.token }}
+        run: |
+            $Params = @{
+              BranchName              = $env:GITHUB_REF
+              GitHubRepoName          = 'sortah'
+              Build                   = 'StageRelease'
+              GitHubStageReleaseToken = $env:GitHubPAT
+              ReleaseType             = '${{ inputs.release_type }}'
+              Verbose                 = $true
+            }
+            ./sortah/.build/build.ps1 @Params

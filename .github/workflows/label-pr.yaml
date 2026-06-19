@@ -1,0 +1,189 @@
+---
+name: label-pr
+on:
+  pull_request_target:
+    types:
+      - opened
+      - edited
+      - reopened
+      - synchronize
+      - labeled
+      - unlabeled
+    branches:
+      - main
+
+permissions: {}
+
+jobs:
+  label-pr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - name: apply-changelog-label
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          script: |
+            const COMMENT_MARKER = '<!-- changelog-label-check -->';
+
+            const headRef = context.payload.pull_request.head.ref;
+            const prNumber = context.payload.pull_request.number;
+
+            async function findBotComment() {
+              const comments = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber
+              });
+              return comments.data.find(c => c.body.includes(COMMENT_MARKER));
+            }
+
+            async function upsertComment(body) {
+              const existing = await findBotComment();
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id,
+                  body
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: prNumber,
+                  body
+                });
+              }
+            }
+
+            async function deleteBotComment() {
+              const existing = await findBotComment();
+              if (existing) {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id
+                });
+              }
+            }
+
+            if (headRef.startsWith('release/')) {
+              core.info('Release branch PR - skipping changelog label check.');
+              return;
+            }
+
+            const title = context.payload.pull_request.title;
+            const changelogLabels = ['bug', 'enhancement', 'documentation', 'cicd', 'maintenance', 'deprecation', 'removed', 'security'];
+
+            const labelMap = [
+              { pattern: /^\[?feat(ure)?(\([^)]+\))?!?\]?:/i,                        label: 'enhancement'                     },
+              { pattern: /^\[?(fix|bug)(\([^)]+\))?!?\]?:/i,                         label: 'bug'                             },
+              { pattern: /^\[?docs?(\([^)]+\))?!?\]?:/i,                             label: 'documentation'                   },
+              { pattern: /^\[?ci(cd)?(\([^)]+\))?!?\]?:/i,                           label: 'cicd'                            },
+              { pattern: /^\[?(chore|ops|refactor|tests?|style)(\([^)]+\))?!?\]?:/i, label: 'maintenance'                     },
+              { pattern: /^\[?deprecat(ed|ion)?(\([^)]+\))?!?\]?:/i,                 label: 'deprecation'                     },
+              { pattern: /^\[?removed?(\([^)]+\))?!?\]?:/i,                          label: 'removed',  alwaysBreaking: true  },
+              { pattern: /^\[?sec(urity)?(\([^)]+\))?!?\]?:/i,                       label: 'security'                        },
+            ];
+
+            // Dependabot PRs: auto-label based on ecosystem, then skip normal flow
+            if (context.payload.pull_request.user.login === 'dependabot[bot]') {
+              const label = title.includes('actions/') ? 'cicd' : 'maintenance';
+              const existingLabels = context.payload.pull_request.labels.map(l => l.name);
+
+              for (const l of [...changelogLabels, 'breaking']) {
+                if (l !== label && existingLabels.includes(l)) {
+                  await github.rest.issues.removeLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: prNumber,
+                    name: l
+                  });
+                }
+              }
+
+              if (!existingLabels.includes(label)) {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: prNumber,
+                  labels: [label]
+                });
+              }
+
+              await deleteBotComment();
+              return;
+            }
+
+            let matchedEntry = null;
+            for (const entry of labelMap) {
+              if (entry.pattern.test(title)) {
+                matchedEntry = entry;
+                break;
+              }
+            }
+
+            if (matchedEntry) {
+              const matched = matchedEntry.label;
+              const isBreaking = matchedEntry.alwaysBreaking || /^\[?\w+(\([^)]+\))?!\]?:/i.test(title);
+              const labelsToApply = isBreaking ? [matched, 'breaking'] : [matched];
+              const existingLabels = context.payload.pull_request.labels.map(l => l.name);
+
+              for (const label of [...changelogLabels, 'breaking']) {
+                if (!labelsToApply.includes(label) && existingLabels.includes(label)) {
+                  await github.rest.issues.removeLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: prNumber,
+                    name: label
+                  });
+                }
+              }
+
+              for (const label of labelsToApply) {
+                if (!existingLabels.includes(label)) {
+                  await github.rest.issues.addLabels({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: prNumber,
+                    labels: [label]
+                  });
+                }
+              }
+            }
+
+            // Re-fetch to get current label state after any changes above
+            const { data: issue } = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber
+            });
+            const currentLabels = issue.labels.map(l => l.name);
+            const hasValidLabel = currentLabels.some(l => changelogLabels.includes(l));
+
+            if (!hasValidLabel) {
+              await upsertComment(
+                `${COMMENT_MARKER}\n` +
+                `:warning: **Changelog label missing**\n\n` +
+                `This PR does not have a recognised changelog label. Please update your PR title to begin with one of the following:\n\n` +
+                `| Prefix | Examples |\n` +
+                `| --- | --- |\n` +
+                `| Features       | \`[feat]:\` \`feat:\` \`[feature]:\` |\n` +
+                `| Bug fixes      | \`[fix]:\` \`fix:\` \`[bug]:\` |\n` +
+                `| Docs           | \`[docs]:\` \`docs:\` \`[doc]:\` |\n` +
+                `| Deprecations   | \`[deprecat]:\` \`[deprecated]:\` \`[deprecation]:\` |\n` +
+                `| Removals       | \`[remove]:\` \`remove:\` \`[removed]:\` |\n` +
+                `| Security       | \`[security]:\` \`security:\` \`[sec]:\` |\n` +
+                `| CI/CD          | \`[ci]:\` \`ci:\` \`[cicd]:\` |\n` +
+                `| Maintenance    | \`[chore]:\` \`[refactor]:\` \`[ops]:\` \`[test]:\` \`[style]:\` |\n\n` +
+                `Add \`!\` before the colon to flag a breaking change, e.g. \`[feat!]:\` or \`fix!:\`\n` +
+                `Scopes are also supported: \`feat(scope):\`, \`fix(scope)!:\`, etc.\n` +
+                `Note: \`[remove]:\` / \`[removed]:\` always implies breaking.`
+              );
+              core.setFailed('PR is missing a changelog label.');
+            } else {
+              await deleteBotComment();
+            }
