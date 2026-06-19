@@ -520,6 +520,15 @@ task PublishRelease GetReleaseHistory, {
             throw "A GitHub release for $script:PrefixedVersion already exists!"
         }
 
+        # Validate archives are present before creating the release so we never
+        # end up with a published release that has no assets.
+        $Archives = Get-ChildItem -Path $Global:BrownserveRepoBuildOutputDirectory -File |
+            Where-Object { $_.Extension -in @('.gz', '.zip') }
+        if (!$Archives)
+        {
+            throw "No release archives found in '$Global:BrownserveRepoBuildOutputDirectory'. Ensure the Package task ran on all platforms first."
+        }
+
         Write-Build White "Creating GitHub release $script:PrefixedVersion"
         $ReleaseResponse = New-GitHubRelease `
             -Name            $script:PrefixedVersion `
@@ -528,14 +537,6 @@ task PublishRelease GetReleaseHistory, {
             -GitHubToken     $GitHubReleaseToken `
             -RepositoryName  $GitHubRepoName `
             -RepositoryOwner $GitHubRepoOwner
-
-        # Upload every archive found in the build output directory
-        $Archives = Get-ChildItem -Path $Global:BrownserveRepoBuildOutputDirectory -File |
-            Where-Object { $_.Extension -in @('.gz', '.zip') }
-        if (!$Archives)
-        {
-            throw "No release archives found in '$Global:BrownserveRepoBuildOutputDirectory'. Ensure the Package task ran on all platforms first."
-        }
         foreach ($Archive in $Archives)
         {
             Write-Build White "Uploading '$($Archive.Name)' as release asset"
