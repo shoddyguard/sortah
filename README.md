@@ -1,38 +1,21 @@
 # sortah
 
-Sort downloaded images into per-person directories by matching the username embedded in each filename against a configurable alias mapping.
+> This project was mainly made as a way for me to dick around in Rust before doing something more serious and is not at all a serious tool.
 
-One person can have many usernames (`joeBloggs`, `joe_bloggs`, `jblgs`); all their images end up in the same directory.
+Sort images downloaded from social media into per-person folders. sortah extracts the username from each filename, matches it against a configurable alias mapping, and moves the file into the right directory.
+
+One person can have many usernames (`joeBloggs`, `joe_bloggs`, `jblgs`); all their images end up in the same folder.
 
 ## Features
 
-- Filename-based username extraction via a **configurable regex**
-- **SQLite alias store**: scales to hundreds of people and aliases, never hand-edited
-- **Bulk CSV import/export** for loading an existing mapping
-- **Verbatim alias storage**: `joeBloggs` is stored as `joeBloggs`; case-insensitive matching is a separate config flag
-- **Confirmation prompt** before any files move; `--yes` to skip
-- Clash handling: identical duplicates are skipped; differing clashes are renamed `file (2).jpg`
-- Cross-device move support (copy + delete fallback)
-- Single static binary, no runtime required
+- Map multiple usernames to a single person; they all sort into the same folder
+- Shows a plan before moving anything, then prompts for confirmation (or `--yes` to skip)
+- Identical duplicates are skipped; name clashes are automatically renamed
+- Bulk import/export via CSV
 
 ## Installation
 
-### Build from source
-
-```sh
-cargo build --release
-# Binary at: target/release/sortah
-```
-
-Cross-compile for other platforms:
-
-```sh
-# Windows (requires the target to be installed)
-cargo build --release --target x86_64-pc-windows-gnu
-
-# macOS (from macOS or with a cross-compilation toolchain)
-cargo build --release --target x86_64-apple-darwin
-```
+Download the latest binary from the [Releases](../../releases) page.
 
 ## Quick start
 
@@ -54,6 +37,38 @@ sortah config validate
 cd ~/Downloads/friend-pics
 sortah sort          # shows a plan, then prompts before moving
 sortah sort --yes    # skip the prompt
+```
+
+## Commands
+
+```
+sortah sort                    Sort the current directory
+sortah sort --yes              Sort without the confirmation prompt
+sortah sort --dest <path>      Override destination_root for this run
+sortah sort --verbose          Print every planned move
+
+sortah config init             Write starter config and create database
+sortah config path             Print config and database paths
+sortah config validate         Validate config and report any issues
+
+sortah person add <name>       Add a person
+sortah person rm <name>        Remove a person (and their aliases)
+
+sortah alias add <name> <alias>  Map an alias to a person
+sortah alias rm <alias>          Remove an alias
+
+sortah list                    List all people and aliases
+sortah list --person <name>    List aliases for one person
+
+sortah import <file.csv>       Bulk-import from CSV
+sortah export <file.csv>       Export mapping to CSV
+```
+
+Global flags (work with every command):
+
+```
+-c, --config <path>   Use this config file instead of the default
+    SORTAH_CONFIG      Environment variable equivalent of --config
 ```
 
 ## Config file
@@ -125,7 +140,7 @@ Import is idempotent: exact-duplicate rows are skipped.
 
 ## Sort behaviour
 
-`sortah sort` scans the **current working directory** recursively for image files and builds a plan:
+`sortah sort` scans the current working directory recursively for image files and builds a plan:
 
 | File situation | Action |
 |---|---|
@@ -136,35 +151,3 @@ Import is idempotent: exact-duplicate rows are skipped.
 | Destination file differs (name clash) | Renamed `file (2).jpg`, `file (3).jpg`, etc. |
 
 The plan is printed with a per-person breakdown before anything is moved. Confirm with `y` or pass `--yes` to skip the prompt. Use `--verbose` to see every planned move.
-
-## Commands
-
-```
-sortah sort                    Sort the current directory
-sortah sort --yes              Sort without the confirmation prompt
-sortah sort --dest <path>      Override destination_root for this run
-sortah sort --verbose          Print every planned move
-
-sortah config init             Write starter config and create database
-sortah config path             Print config and database paths
-sortah config validate         Validate config and report any issues
-
-sortah person add <name>       Add a person
-sortah person rm <name>        Remove a person (and their aliases)
-
-sortah alias add <name> <alias>  Map an alias to a person
-sortah alias rm <alias>          Remove an alias
-
-sortah list                    List all people and aliases
-sortah list --person <name>    List aliases for one person
-
-sortah import <file.csv>       Bulk-import from CSV
-sortah export <file.csv>       Export mapping to CSV
-```
-
-Global flags (work with every command):
-
-```
--c, --config <path>   Use this config file instead of the default
-    SORTAH_CONFIG      Environment variable equivalent of --config
-```
