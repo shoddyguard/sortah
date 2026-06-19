@@ -1,0 +1,13 @@
+[package]
+name = "sortah"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "sortah"
+path = "src/main.rs"
+
+[dependencies]
+sortah-core = { path = "../core" }
+clap = { version = "4", features = ["derive", "env"] }
+anyhow = "1"

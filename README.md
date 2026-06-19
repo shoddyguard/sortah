@@ -1,0 +1,170 @@
+# sortah
+
+Sort downloaded images into per-person directories by matching the username embedded in each filename against a configurable alias mapping.
+
+One person can have many usernames (`joeBloggs`, `joe_bloggs`, `jblgs`); all their images end up in the same directory.
+
+## Features
+
+- Filename-based username extraction via a **configurable regex**
+- **SQLite alias store**: scales to hundreds of people and aliases, never hand-edited
+- **Bulk CSV import/export** for loading an existing mapping
+- **Verbatim alias storage**: `joeBloggs` is stored as `joeBloggs`; case-insensitive matching is a separate config flag
+- **Confirmation prompt** before any files move; `--yes` to skip
+- Clash handling: identical duplicates are skipped; differing clashes are renamed `file (2).jpg`
+- Cross-device move support (copy + delete fallback)
+- Single static binary, no runtime required
+
+## Installation
+
+### Build from source
+
+```sh
+cargo build --release
+# Binary at: target/release/sortah
+```
+
+Cross-compile for other platforms:
+
+```sh
+# Windows (requires the target to be installed)
+cargo build --release --target x86_64-pc-windows-gnu
+
+# macOS (from macOS or with a cross-compilation toolchain)
+cargo build --release --target x86_64-apple-darwin
+```
+
+## Quick start
+
+```sh
+# 1. Write a starter config and create an empty database
+sortah config init
+
+# 2. Edit the config
+$EDITOR ~/.config/sortah/config.yaml
+
+# 3. Load your existing mapping from a CSV file
+sortah import people.csv
+
+# 4. Check everything looks right
+sortah list
+sortah config validate
+
+# 5. cd to your downloads folder and sort
+cd ~/Downloads/friend-pics
+sortah sort          # shows a plan, then prompts before moving
+sortah sort --yes    # skip the prompt
+```
+
+## Config file
+
+Default path: `~/.config/sortah/config.yaml` (Linux), `~/Library/Application Support/sortah/config.yaml` (macOS), `%APPDATA%\sortah\config.yaml` (Windows).
+
+Override with `--config <path>` or the `SORTAH_CONFIG` environment variable.
+
+```yaml
+# Where sorted images will be placed. Each person gets a subdirectory here.
+destination_root: ~/Pictures/Friends
+
+# Regex applied to each image filename. Must contain a named capture group `username`.
+# Example: joeBloggs_IMG_1234.jpg -> username = joeBloggs
+filename_pattern: '^(?P<username>[^_]+)_'
+
+# Whether to compare usernames case-insensitively when matching stored aliases.
+# Aliases are stored verbatim; this only affects the matching step.
+case_insensitive: true
+
+# Image extensions to process (case-insensitive).
+extensions: [jpg, jpeg, png, gif, webp]
+
+# Path to the alias database. Defaults to the platform data directory when omitted.
+# database: ~/.local/share/sortah/mappings.db
+```
+
+## Managing people and aliases
+
+```sh
+# Add a person
+sortah person add "Joe Bloggs"
+
+# Add their username aliases (stored exactly as typed)
+sortah alias add "Joe Bloggs" joeBloggs
+sortah alias add "Joe Bloggs" joe_bloggs
+sortah alias add "Joe Bloggs" jblgs
+
+# Remove an alias
+sortah alias rm jblgs
+
+# Remove a person (also removes all their aliases)
+sortah person rm "Joe Bloggs"
+
+# List everything
+sortah list
+sortah list --person "Joe Bloggs"
+```
+
+## CSV bulk import / export
+
+The CSV must have headers `canonical,alias` (one alias per row):
+
+```csv
+canonical,alias
+Joe Bloggs,joeBloggs
+Joe Bloggs,joe_bloggs
+Joe Bloggs,jblgs
+Jane Doe,janedoe
+Jane Doe,jane.d
+```
+
+```sh
+sortah import people.csv     # create people and aliases in bulk
+sortah export backup.csv     # dump the full mapping for backup or editing
+```
+
+Import is idempotent: exact-duplicate rows are skipped.
+
+## Sort behaviour
+
+`sortah sort` scans the **current working directory** recursively for image files and builds a plan:
+
+| File situation | Action |
+|---|---|
+| Username matches an alias | Planned for move to `destination_root/<canonical>/` |
+| Username not in mapping | Left in place, reported |
+| Filename does not match the regex | Left in place, reported |
+| Destination file is identical | Skipped (duplicate) |
+| Destination file differs (name clash) | Renamed `file (2).jpg`, `file (3).jpg`, etc. |
+
+The plan is printed with a per-person breakdown before anything is moved. Confirm with `y` or pass `--yes` to skip the prompt. Use `--verbose` to see every planned move.
+
+## Commands
+
+```
+sortah sort                    Sort the current directory
+sortah sort --yes              Sort without the confirmation prompt
+sortah sort --dest <path>      Override destination_root for this run
+sortah sort --verbose          Print every planned move
+
+sortah config init             Write starter config and create database
+sortah config path             Print config and database paths
+sortah config validate         Validate config and report any issues
+
+sortah person add <name>       Add a person
+sortah person rm <name>        Remove a person (and their aliases)
+
+sortah alias add <name> <alias>  Map an alias to a person
+sortah alias rm <alias>          Remove an alias
+
+sortah list                    List all people and aliases
+sortah list --person <name>    List aliases for one person
+
+sortah import <file.csv>       Bulk-import from CSV
+sortah export <file.csv>       Export mapping to CSV
+```
+
+Global flags (work with every command):
+
+```
+-c, --config <path>   Use this config file instead of the default
+    SORTAH_CONFIG      Environment variable equivalent of --config
+```
