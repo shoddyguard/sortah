@@ -227,12 +227,12 @@ task UpdateCargoVersion SetVersion, {
     # Plain semver without 'v' prefix, as Cargo requires
     $NewSemver = "$($script:NewVersion.Major).$($script:NewVersion.Minor).$($script:NewVersion.Patch)"
 
-    # Replace the version value inside [workspace.package]; the regex matches only within that section
-    $Updated = $CargoContent -replace '(?ms)(\[workspace\.package\].*?^version\s*=\s*")[^"]*(")', "`${1}$NewSemver`${2}"
-    if ($Updated -eq $CargoContent)
+    $CargoVersionPattern = '(?ms)(\[workspace\.package\].*?^version\s*=\s*")[^"]*(")'
+    if (-not [regex]::IsMatch($CargoContent, $CargoVersionPattern))
     {
         throw "Failed to update version in Cargo.toml. Ensure the root Cargo.toml has a [workspace.package] section containing a version = '...' field."
     }
+    $Updated = $CargoContent -replace $CargoVersionPattern, "`${1}$NewSemver`${2}"
     Set-Content -Path $CargoTomlPath -Value $Updated -NoNewline
     $script:TrackedFiles += $CargoTomlPath
     Write-Verbose "Cargo.toml version updated to $NewSemver"
