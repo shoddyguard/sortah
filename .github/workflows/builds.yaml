@@ -30,7 +30,9 @@ jobs:
             echo "relevant=false" >> "$GITHUB_OUTPUT"
           fi
 
-  BuildTestAndCheck:
+  # The matrix job is named 'build', not 'BuildTestAndCheck', so that its per-OS expanded
+  # check names (build (ubuntu-latest) etc.) are not the ones branch protection requires.
+  build:
     needs: check-changes
     if: needs.check-changes.outputs.relevant == 'true'
     strategy:
@@ -55,3 +57,31 @@ jobs:
               -BranchName $env:GITHUB_REF `
               -Build 'BuildTestAndCheck' `
               -Verbose
+
+  # Gate job: always runs (even when 'build' was skipped) and reports the single status check
+  # name that branch protection requires. This keeps the required-check name stable whether
+  # changes are present or not.
+  BuildTestAndCheck:
+    needs: [check-changes, build]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: evaluate-build-result
+        run: |
+          # check-changes must have succeeded
+          if [ "${{ needs.check-changes.result }}" != "success" ]; then
+            echo "check-changes did not succeed (result: ${{ needs.check-changes.result }})"
+            exit 1
+          fi
+          # no relevant changes -> build was correctly skipped -> pass
+          if [ "${{ needs.check-changes.outputs.relevant }}" != "true" ]; then
+            echo "No relevant changes, build skipped"
+            exit 0
+          fi
+          # relevant changes -> the whole matrix must have succeeded
+          if [ "${{ needs.build.result }}" == "success" ]; then
+            echo "All build matrix legs succeeded"
+            exit 0
+          fi
+          echo "Build matrix did not succeed (result: ${{ needs.build.result }})"
+          exit 1
