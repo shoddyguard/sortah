@@ -98,7 +98,15 @@ param
         Mandatory = $false
     )]
     [string]
-    $Target
+    $Target,
+
+    # Directory containing pre-built archives to copy into the build output directory before running the task.
+    # Used by the release workflow to make artifacts available after _init.ps1 recreates ephemeral directories.
+    [Parameter(
+        Mandatory = $false
+    )]
+    [string]
+    $ArchiveSourceDirectory
 )
 # Always stop on errors
 $ErrorActionPreference = 'Stop'
@@ -125,6 +133,14 @@ try
 catch
 {
     Write-Error "Failed to init repo.`n$($_.Exception.Message)"
+}
+
+# If a source directory was given, copy its archives into the build output directory now that
+# _init.ps1 has recreated the ephemeral directories.
+if ($ArchiveSourceDirectory)
+{
+    Write-Verbose "Copying release archives from '$ArchiveSourceDirectory'"
+    Get-ChildItem -Path $ArchiveSourceDirectory -File | Copy-Item -Destination $global:BrownserveRepoBuildOutputDirectory
 }
 
 # Invoke our build task

@@ -65,12 +65,13 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
         with:
           path: sortah
-      # Step 3: Download all platform archives into the build output directory
+      # Step 3: Download all platform archives into a staging directory outside the repo tree.
+      # They are copied into .tmp/output by build.ps1 after _init.ps1 recreates ephemeral directories.
       - name: download-artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v4
         with:
           pattern: binary-*
-          path: sortah/.tmp/output/
+          path: ${{ runner.temp }}/release-archives
           merge-multiple: true
       # Step 4: Run the release script
       - name: run-build-script
@@ -79,12 +80,13 @@ jobs:
           GitHubToken: ${{ steps.app-token.outputs.token }}
         run: |
             $Params = @{
-              BranchName         = $env:GITHUB_REF
-              GitHubRepoName     = 'sortah'
-              Build              = 'Release'
-              PublishTo          = @('GitHub')
-              GitHubReleaseToken = $env:GitHubToken
-              Verbose            = $true
+              BranchName             = $env:GITHUB_REF
+              GitHubRepoName         = 'sortah'
+              Build                  = 'Release'
+              PublishTo              = @('GitHub')
+              GitHubReleaseToken     = $env:GitHubToken
+              ArchiveSourceDirectory = '${{ runner.temp }}/release-archives'
+              Verbose                = $true
             }
             ./sortah/.build/build.ps1 @Params
       # Step 5: Push a notification to Slack
