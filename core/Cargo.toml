@@ -10,7 +10,7 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 csv = "1"
 regex = "1"
 walkdir = "2"
-thiserror = "1"
+thiserror = "2"
 directories = "6"
 
 [dev-dependencies]
