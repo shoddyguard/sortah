@@ -529,14 +529,15 @@ task PublishRelease GetReleaseHistory, {
             throw "No release archives found in '$Global:BrownserveRepoBuildOutputDirectory'. Ensure the Package task ran on all platforms first."
         }
 
-        Write-Build White "Creating GitHub release $script:PrefixedVersion"
+        Write-Build White "Creating draft GitHub release $script:PrefixedVersion"
         $ReleaseResponse = New-GitHubRelease `
             -Name            $script:PrefixedVersion `
             -Tag             $script:PrefixedVersion `
             -Description     $script:ReleaseNotes `
             -GitHubToken     $GitHubReleaseToken `
             -RepositoryName  $GitHubRepoName `
-            -RepositoryOwner $GitHubRepoOwner
+            -RepositoryOwner $GitHubRepoOwner `
+            -Draft
         foreach ($Archive in $Archives)
         {
             Write-Build White "Uploading '$($Archive.Name)' as release asset"
@@ -546,6 +547,14 @@ task PublishRelease GetReleaseHistory, {
                 -FilePath  $Archive.FullName `
                 -ErrorAction 'Stop'
         }
+        Write-Build White "Publishing release $script:PrefixedVersion"
+        Update-GitHubRelease `
+            -ReleaseId       $ReleaseResponse.id `
+            -RepositoryName  $GitHubRepoName `
+            -RepositoryOwner $GitHubRepoOwner `
+            -Token           $GitHubReleaseToken `
+            -Draft           $false `
+            -ErrorAction     'Stop'
     }
     else
     {
