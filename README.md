@@ -15,7 +15,7 @@ One person can have many usernames (`joeBloggs`, `joe_bloggs`, `jblgs`); all the
 
 ## Installation
 
-Download the latest binary from the [Releases](../../releases) page.
+You can use the installation scripts in the `scripts/` directory to have the application installed on your machine or simply download the latest binary from the [Releases](../../releases) page.
 
 ## Quick start
 
