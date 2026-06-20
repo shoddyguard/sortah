@@ -19,7 +19,7 @@ pub enum EngineError {
 ///
 /// No files are moved; the returned `Plan` describes every intended action.
 /// `alias_map` must be keyed by normalised alias (already lowercased when
-/// `config.case_insensitive` is true) and map to the canonical person name.
+/// `config.case_insensitive` is true) and map to the name person name.
 pub fn build_plan(
     source_dir: &Path,
     config: &Config,
@@ -83,7 +83,7 @@ pub fn build_plan(
             username.clone()
         };
 
-        let canonical = match alias_map.get(&lookup_key) {
+        let name = match alias_map.get(&lookup_key) {
             Some(c) => c.clone(),
             None => {
                 plan.actions.push(PlannedAction::Skip {
@@ -94,7 +94,7 @@ pub fn build_plan(
             }
         };
 
-        let safe_dir = sanitise_dir_name(&canonical);
+        let safe_dir = sanitise_dir_name(&name);
         let desired_dst = dest_root.join(&safe_dir).join(filename);
 
         // Resolve clashes with existing files or earlier plan entries.
@@ -113,7 +113,7 @@ pub fn build_plan(
                     plan.actions.push(PlannedAction::Move(PlannedMove {
                         src: path.to_path_buf(),
                         dst,
-                        canonical,
+                        name,
                     }));
                 }
                 Err(e) => {
@@ -128,7 +128,7 @@ pub fn build_plan(
             plan.actions.push(PlannedAction::Move(PlannedMove {
                 src: path.to_path_buf(),
                 dst,
-                canonical,
+                name,
             }));
         }
     }

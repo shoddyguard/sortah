@@ -17,7 +17,7 @@ pub enum SkipReason {
 pub struct PlannedMove {
     pub src: PathBuf,
     pub dst: PathBuf,
-    pub canonical: String,
+    pub name: String,
 }
 
 /// One item in the sort plan.
@@ -42,7 +42,7 @@ impl Plan {
             match action {
                 PlannedAction::Move(m) => {
                     summary.to_move += 1;
-                    *summary.by_person.entry(m.canonical.clone()).or_insert(0) += 1;
+                    *summary.by_person.entry(m.name.clone()).or_insert(0) += 1;
                 }
                 PlannedAction::Skip { reason, .. } => match reason {
                     SkipReason::Duplicate => summary.skip_duplicate += 1,
@@ -69,7 +69,7 @@ pub struct PlanSummary {
     pub skip_duplicate: usize,
     pub unknown_usernames: Vec<(String, usize)>,
     pub unparseable: usize,
-    /// Files to move per canonical person name.
+    /// Files to move per name person name.
     pub by_person: HashMap<String, usize>,
 }
 

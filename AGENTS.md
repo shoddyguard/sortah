@@ -48,7 +48,7 @@ without touching `cli`. Do not move logic into `cli`.
 ## SQLite schema
 
 ```sql
-CREATE TABLE people  (id INTEGER PRIMARY KEY, canonical TEXT NOT NULL UNIQUE);
+CREATE TABLE people  (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE);
 CREATE TABLE aliases (alias TEXT PRIMARY KEY,
                       person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE);
 ```

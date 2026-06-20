@@ -108,7 +108,7 @@ fn handle_config(cmd: ConfigCommand, config_path: Option<PathBuf>) -> Result<()>
                     for c in &collisions {
                         println!(
                             "  '{}' ({}) vs '{}' ({})",
-                            c.alias_a, c.canonical_a, c.alias_b, c.canonical_b
+                            c.alias_a, c.name_a, c.alias_b, c.name_b
                         );
                     }
                 }
@@ -218,13 +218,13 @@ fn handle_person(cmd: PersonCommand, config_path: Option<PathBuf>) -> Result<()>
     let config = load_config(config_path)?;
     let store = open_store(&config)?;
     match cmd {
-        PersonCommand::Add { canonical } => {
-            store.add_person(&canonical)?;
-            println!("Added person: {}", canonical);
+        PersonCommand::Add { name } => {
+            store.add_person(&name)?;
+            println!("Added person: {}", name);
         }
-        PersonCommand::Rm { canonical } => {
-            store.remove_person(&canonical)?;
-            println!("Removed: {}", canonical);
+        PersonCommand::Rm { name } => {
+            store.remove_person(&name)?;
+            println!("Removed: {}", name);
         }
     }
     Ok(())
@@ -234,9 +234,9 @@ fn handle_alias(cmd: AliasCommand, config_path: Option<PathBuf>) -> Result<()> {
     let config = load_config(config_path)?;
     let store = open_store(&config)?;
     match cmd {
-        AliasCommand::Add { canonical, alias } => {
-            store.add_alias(&canonical, &alias)?;
-            println!("Added alias '{}' for '{}'", alias, canonical);
+        AliasCommand::Add { name, alias } => {
+            store.add_alias(&name, &alias)?;
+            println!("Added alias '{}' for '{}'", alias, name);
         }
         AliasCommand::Rm { alias } => {
             store.remove_alias(&alias)?;
@@ -268,8 +268,8 @@ fn handle_list(args: cli::ListArgs, config_path: Option<PathBuf>) -> Result<()> 
             return Ok(());
         }
         for person in &people {
-            let aliases = store.list_aliases(Some(&person.canonical))?;
-            println!("{}", person.canonical);
+            let aliases = store.list_aliases(Some(&person.name))?;
+            println!("{}", person.name);
             if aliases.is_empty() {
                 println!("  (no aliases)");
             } else {

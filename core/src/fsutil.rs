@@ -91,7 +91,7 @@ pub fn find_free_path(desired: &Path, reserved: &HashSet<PathBuf>) -> PathBuf {
     unreachable!("exhausted candidate filenames")
 }
 
-/// Sanitise a canonical person name so it is safe to use as a directory name on all
+/// Sanitise a name person name so it is safe to use as a directory name on all
 /// platforms. Replaces characters that are forbidden or problematic on Windows, macOS,
 /// and Linux with an underscore.
 pub fn sanitise_dir_name(name: &str) -> String {

@@ -120,15 +120,12 @@ sortah list --person "Joe Bloggs"
 
 ## CSV bulk import / export
 
-The CSV must have headers `canonical,alias` (one alias per row):
+One row per person: the name followed by all their aliases as additional columns.
 
 ```csv
-canonical,alias
-Joe Bloggs,joeBloggs
-Joe Bloggs,joe_bloggs
-Joe Bloggs,jblgs
-Jane Doe,janedoe
-Jane Doe,jane.d
+name,aliases
+Joe Bloggs,joeBloggs,joe_bloggs,jblgs
+Jane Doe,janedoe,jane.d
 ```
 
 ```sh
@@ -136,7 +133,7 @@ sortah import people.csv     # create people and aliases in bulk
 sortah export backup.csv     # dump the full mapping for backup or editing
 ```
 
-Import is idempotent: exact-duplicate rows are skipped.
+Import is idempotent: exact-duplicate aliases are skipped.
 
 ## Sort behaviour
 
@@ -144,7 +141,7 @@ Import is idempotent: exact-duplicate rows are skipped.
 
 | File situation | Action |
 |---|---|
-| Username matches an alias | Planned for move to `destination_root/<canonical>/` |
+| Username matches an alias | Planned for move to `destination_root/<name>/` |
 | Username not in mapping | Left in place, reported |
 | Filename does not match the regex | Left in place, reported |
 | Destination file is identical | Skipped (duplicate) |

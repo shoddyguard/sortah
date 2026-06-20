@@ -36,7 +36,7 @@ pub enum Command {
     /// List people and their aliases
     List(ListArgs),
 
-    /// Bulk-import aliases from a CSV file (headers: canonical,alias)
+    /// Bulk-import aliases from a CSV file (headers: name,alias)
     Import(ImportArgs),
 
     /// Export all aliases to a CSV file
@@ -72,13 +72,13 @@ pub enum ConfigCommand {
 pub enum PersonCommand {
     /// Add a new person
     Add {
-        /// The canonical directory name for this person
-        canonical: String,
+        /// The name directory name for this person
+        name: String,
     },
     /// Remove a person and all their aliases
     Rm {
-        /// The canonical name of the person to remove
-        canonical: String,
+        /// The name name of the person to remove
+        name: String,
     },
 }
 
@@ -86,8 +86,8 @@ pub enum PersonCommand {
 pub enum AliasCommand {
     /// Add a username alias for a person
     Add {
-        /// The canonical name of the person
-        canonical: String,
+        /// The name name of the person
+        name: String,
         /// The alias to add (stored verbatim)
         alias: String,
     },
@@ -107,7 +107,7 @@ pub struct ListArgs {
 
 #[derive(Args, Debug)]
 pub struct ImportArgs {
-    /// CSV file to import (must have headers: canonical,alias)
+    /// CSV file to import (must have headers: name,alias)
     pub file: PathBuf,
 }
 

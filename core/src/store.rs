@@ -1,5 +1,4 @@
 use rusqlite::{params, Connection};
-use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
 use thiserror::Error;
@@ -27,13 +26,13 @@ pub struct Store {
 #[derive(Debug)]
 pub struct Person {
     pub id: i64,
-    pub canonical: String,
+    pub name: String,
 }
 
 #[derive(Debug)]
 pub struct Alias {
     pub alias: String,
-    pub canonical: String,
+    pub name: String,
 }
 
 #[derive(Debug, Default)]
@@ -48,8 +47,8 @@ pub struct ImportResult {
 pub struct CaseCollision {
     pub alias_a: String,
     pub alias_b: String,
-    pub canonical_a: String,
-    pub canonical_b: String,
+    pub name_a: String,
+    pub name_b: String,
 }
 
 impl Store {
@@ -79,7 +78,7 @@ impl Store {
 
              CREATE TABLE IF NOT EXISTS people (
                  id        INTEGER PRIMARY KEY,
-                 canonical TEXT NOT NULL UNIQUE
+                 name TEXT NOT NULL UNIQUE
              );
 
              CREATE TABLE IF NOT EXISTS aliases (
@@ -94,9 +93,9 @@ impl Store {
 
     // ---- People ----
 
-    pub fn add_person(&self, canonical: &str) -> Result<i64, StoreError> {
+    pub fn add_person(&self, name: &str) -> Result<i64, StoreError> {
         self.conn
-            .execute("INSERT INTO people (canonical) VALUES (?1)", params![canonical])
+            .execute("INSERT INTO people (name) VALUES (?1)", params![name])
             .map_err(|e| match e {
                 rusqlite::Error::SqliteFailure(ref err, _)
                     if err.code == rusqlite::ErrorCode::ConstraintViolation =>
@@ -110,12 +109,12 @@ impl Store {
         Ok(self.conn.last_insert_rowid())
     }
 
-    pub fn remove_person(&self, canonical: &str) -> Result<(), StoreError> {
+    pub fn remove_person(&self, name: &str) -> Result<(), StoreError> {
         let rows =
             self.conn
-                .execute("DELETE FROM people WHERE canonical = ?1", params![canonical])?;
+                .execute("DELETE FROM people WHERE name = ?1", params![name])?;
         if rows == 0 {
-            return Err(StoreError::PersonNotFound(canonical.to_string()));
+            return Err(StoreError::PersonNotFound(name.to_string()));
         }
         Ok(())
     }
@@ -123,33 +122,33 @@ impl Store {
     pub fn list_people(&self) -> Result<Vec<Person>, StoreError> {
         let mut stmt = self
             .conn
-            .prepare("SELECT id, canonical FROM people ORDER BY canonical")?;
+            .prepare("SELECT id, name FROM people ORDER BY name")?;
         let people = stmt
             .query_map([], |row| {
                 Ok(Person {
                     id: row.get(0)?,
-                    canonical: row.get(1)?,
+                    name: row.get(1)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(people)
     }
 
-    pub fn get_person(&self, canonical: &str) -> Result<Person, StoreError> {
+    pub fn get_person(&self, name: &str) -> Result<Person, StoreError> {
         self.conn
             .query_row(
-                "SELECT id, canonical FROM people WHERE canonical = ?1",
-                params![canonical],
+                "SELECT id, name FROM people WHERE name = ?1",
+                params![name],
                 |row| {
                     Ok(Person {
                         id: row.get(0)?,
-                        canonical: row.get(1)?,
+                        name: row.get(1)?,
                     })
                 },
             )
             .map_err(|e| match e {
                 rusqlite::Error::QueryReturnedNoRows => {
-                    StoreError::PersonNotFound(canonical.to_string())
+                    StoreError::PersonNotFound(name.to_string())
                 }
                 other => StoreError::Sqlite(other),
             })
@@ -157,8 +156,8 @@ impl Store {
 
     // ---- Aliases ----
 
-    pub fn add_alias(&self, canonical: &str, alias: &str) -> Result<(), StoreError> {
-        let person = self.get_person(canonical)?;
+    pub fn add_alias(&self, name: &str, alias: &str) -> Result<(), StoreError> {
+        let person = self.get_person(name)?;
         self.conn
             .execute(
                 "INSERT INTO aliases (alias, person_id) VALUES (?1, ?2)",
@@ -185,12 +184,12 @@ impl Store {
         Ok(())
     }
 
-    /// List all aliases, optionally filtered to a specific person (by canonical name).
-    pub fn list_aliases(&self, canonical: Option<&str>) -> Result<Vec<Alias>, StoreError> {
-        if let Some(canonical) = canonical {
-            let person = self.get_person(canonical)?;
+    /// List all aliases, optionally filtered to a specific person (by name name).
+    pub fn list_aliases(&self, name: Option<&str>) -> Result<Vec<Alias>, StoreError> {
+        if let Some(name) = name {
+            let person = self.get_person(name)?;
             let mut stmt = self.conn.prepare(
-                "SELECT a.alias, p.canonical
+                "SELECT a.alias, p.name
                  FROM aliases a JOIN people p ON p.id = a.person_id
                  WHERE a.person_id = ?1
                  ORDER BY a.alias",
@@ -199,22 +198,22 @@ impl Store {
                 .query_map(params![person.id], |row| {
                     Ok(Alias {
                         alias: row.get(0)?,
-                        canonical: row.get(1)?,
+                        name: row.get(1)?,
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(aliases)
         } else {
             let mut stmt = self.conn.prepare(
-                "SELECT a.alias, p.canonical
+                "SELECT a.alias, p.name
                  FROM aliases a JOIN people p ON p.id = a.person_id
-                 ORDER BY p.canonical, a.alias",
+                 ORDER BY p.name, a.alias",
             )?;
             let aliases = stmt
                 .query_map([], |row| {
                     Ok(Alias {
                         alias: row.get(0)?,
-                        canonical: row.get(1)?,
+                        name: row.get(1)?,
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
@@ -224,66 +223,78 @@ impl Store {
 
     // ---- Alias map for sorting ----
 
-    /// Build an in-memory map of (normalised alias) -> canonical name for use during sort.
+    /// Build an in-memory map of (normalised alias) -> name name for use during sort.
     /// When `case_insensitive` is true, keys are lowercased; stored aliases are not changed.
     pub fn load_alias_map(
         &self,
         case_insensitive: bool,
     ) -> Result<HashMap<String, String>, StoreError> {
         let mut stmt = self.conn.prepare(
-            "SELECT a.alias, p.canonical
+            "SELECT a.alias, p.name
              FROM aliases a JOIN people p ON p.id = a.person_id",
         )?;
         let mut map = HashMap::new();
         let rows = stmt.query_map([], |row| {
             let alias: String = row.get(0)?;
-            let canonical: String = row.get(1)?;
-            Ok((alias, canonical))
+            let name: String = row.get(1)?;
+            Ok((alias, name))
         })?;
         for row in rows {
-            let (alias, canonical) = row?;
+            let (alias, name) = row?;
             let key = if case_insensitive {
                 alias.to_lowercase()
             } else {
                 alias
             };
             // Last-write wins on collision — validate warns about this separately.
-            map.insert(key, canonical);
+            map.insert(key, name);
         }
         Ok(map)
     }
 
     // ---- CSV import / export ----
 
-    /// Bulk-import aliases from a CSV file with headers `canonical,alias`.
+    /// Bulk-import from a CSV file where each row is one person: name followed by
+    /// all their aliases as additional columns (e.g. `Joe Bloggs,joeBloggs,joe_bloggs`).
     /// People are created automatically if they do not already exist.
     pub fn import_csv(&self, path: &Path) -> Result<ImportResult, StoreError> {
         let mut rdr = csv::ReaderBuilder::new()
             .has_headers(true)
+            .flexible(true)
             .from_path(path)?;
 
         let mut result = ImportResult::default();
 
-        for record_result in rdr.deserialize::<CsvRow>() {
+        for record_result in rdr.records() {
             match record_result {
-                Ok(row) => {
-                    // Ensure the person exists; ignore "already exists" errors.
-                    if self.get_person(&row.canonical).is_err() {
-                        if let Err(e) = self.add_person(&row.canonical) {
+                Ok(record) => {
+                    let name = match record.get(0) {
+                        Some(n) if !n.is_empty() => n.to_string(),
+                        _ => {
+                            result.errors.push("Row missing name".to_string());
+                            continue;
+                        }
+                    };
+
+                    if self.get_person(&name).is_err() {
+                        if let Err(e) = self.add_person(&name) {
                             result.errors.push(format!(
                                 "Could not create person '{}': {}",
-                                row.canonical, e
+                                name, e
                             ));
                             continue;
                         }
                     }
-                    match self.add_alias(&row.canonical, &row.alias) {
-                        Ok(()) => result.imported += 1,
-                        Err(StoreError::DuplicateAlias(_)) => result.skipped_duplicate += 1,
-                        Err(e) => result.errors.push(format!(
-                            "Could not add alias '{}' for '{}': {}",
-                            row.alias, row.canonical, e
-                        )),
+
+                    for alias in record.iter().skip(1).filter(|a| !a.is_empty()) {
+                        match self.add_alias(&name, alias) {
+                            Ok(()) => result.imported += 1,
+                            Err(StoreError::DuplicateAlias(_)) => result.skipped_duplicate += 1,
+                            Err(e) => result.errors.push(format!(
+                                "Could not add alias '{}' for '{}': {}",
+                                alias, name, e
+                            )),
+                        }
                     }
                 }
                 Err(e) => result.errors.push(format!("CSV parse error: {e}")),
@@ -292,13 +303,29 @@ impl Store {
         Ok(result)
     }
 
-    /// Export all aliases to a CSV file with headers `canonical,alias`.
+    /// Export all aliases to a CSV file with one row per person: name followed by
+    /// all their aliases as additional columns.
     pub fn export_csv(&self, path: &Path) -> Result<(), StoreError> {
         let aliases = self.list_aliases(None)?;
-        let mut wtr = csv::Writer::from_path(path)?;
-        wtr.write_record(["canonical", "alias"])?;
-        for alias in &aliases {
-            wtr.write_record([&alias.canonical, &alias.alias])?;
+        let mut wtr = csv::WriterBuilder::new().flexible(true).from_path(path)?;
+
+        // list_aliases returns rows ordered by name then alias, so we can stream-group
+        let mut current_name = String::new();
+        let mut record: Vec<String> = Vec::new();
+
+        for alias in aliases {
+            if alias.name != current_name {
+                if !record.is_empty() {
+                    wtr.write_record(&record)?;
+                }
+                current_name = alias.name.clone();
+                record = vec![alias.name, alias.alias];
+            } else {
+                record.push(alias.alias);
+            }
+        }
+        if !record.is_empty() {
+            wtr.write_record(&record)?;
         }
         wtr.flush()?;
         Ok(())
@@ -317,7 +344,7 @@ impl Store {
             lower_map
                 .entry(a.alias.to_lowercase())
                 .or_default()
-                .push((a.alias, a.canonical));
+                .push((a.alias, a.name));
         }
         let mut collisions = Vec::new();
         for group in lower_map.values() {
@@ -329,20 +356,14 @@ impl Store {
                     collisions.push(CaseCollision {
                         alias_a: group[i].0.clone(),
                         alias_b: group[j].0.clone(),
-                        canonical_a: group[i].1.clone(),
-                        canonical_b: group[j].1.clone(),
+                        name_a: group[i].1.clone(),
+                        name_b: group[j].1.clone(),
                     });
                 }
             }
         }
         Ok(collisions)
     }
-}
-
-#[derive(Debug, Deserialize)]
-struct CsvRow {
-    canonical: String,
-    alias: String,
 }
 
 #[cfg(test)]
@@ -361,7 +382,7 @@ mod tests {
         s.add_person("Joe Bloggs").unwrap();
         let people = s.list_people().unwrap();
         assert_eq!(people.len(), 1);
-        assert_eq!(people[0].canonical, "Joe Bloggs");
+        assert_eq!(people[0].name, "Joe Bloggs");
     }
 
     #[test]
@@ -411,9 +432,8 @@ mod tests {
     fn csv_import_export_round_trips() {
         let s = store();
         let mut csv = NamedTempFile::new().unwrap();
-        writeln!(csv, "canonical,alias").unwrap();
-        writeln!(csv, "Joe Bloggs,joeBloggs").unwrap();
-        writeln!(csv, "Joe Bloggs,joe_bloggs").unwrap();
+        writeln!(csv, "name,aliases").unwrap();
+        writeln!(csv, "Joe Bloggs,joeBloggs,joe_bloggs").unwrap();
         writeln!(csv, "Jane Doe,janedoe").unwrap();
 
         let result = s.import_csv(csv.path()).unwrap();
@@ -424,8 +444,9 @@ mod tests {
         let out = NamedTempFile::new().unwrap();
         s.export_csv(out.path()).unwrap();
         let content = std::fs::read_to_string(out.path()).unwrap();
-        assert!(content.contains("Joe Bloggs,joeBloggs") || content.contains("Joe Bloggs,joe_bloggs"));
-        assert!(content.contains("Jane Doe,janedoe"));
+        // Export has one row per person with all aliases on the same line
+        assert!(content.contains("Joe Bloggs") && content.contains("joeBloggs") && content.contains("joe_bloggs"));
+        assert!(content.contains("Jane Doe") && content.contains("janedoe"));
     }
 
     #[test]
