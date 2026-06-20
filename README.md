@@ -81,16 +81,12 @@ Override with `--config <path>` or the `SORTAH_CONFIG` environment variable.
 # Where sorted images will be placed. Each person gets a subdirectory here.
 destination_root: ~/Pictures/Friends
 
-# Regex applied to each image filename. Must contain a named capture group `username`.
-# Example: joeBloggs_IMG_1234.jpg -> username = joeBloggs
-filename_pattern: '^(?P<username>[^_]+)_'
-
-# Whether to compare usernames case-insensitively when matching stored aliases.
-# Aliases are stored verbatim; this only affects the matching step.
+# Whether to match aliases case-insensitively against filenames.
+# When true, alias "joeBloggs" matches a file containing "joebloggs".
 case_insensitive: true
 
 # Image extensions to process (case-insensitive).
-extensions: [jpg, jpeg, png, gif, webp]
+extensions: [jpg, jpeg, png, gif, webp, mp4]
 
 # Path to the alias database. Defaults to the platform data directory when omitted.
 # database: ~/.local/share/sortah/mappings.db

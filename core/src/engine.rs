@@ -1,6 +1,5 @@
 use crate::config::Config;
 use crate::fsutil::{files_identical, find_free_path, move_file, sanitise_dir_name};
-use crate::parse::{FilenameParser, ParseError};
 use crate::report::{ActionOutcome, ExecutionReport, Plan, PlannedAction, PlannedMove, SkipReason};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -9,8 +8,6 @@ use walkdir::WalkDir;
 
 #[derive(Debug, Error)]
 pub enum EngineError {
-    #[error("Invalid regex pattern: {0}")]
-    Parse(#[from] ParseError),
     #[error("Directory walk error: {0}")]
     Walk(#[from] walkdir::Error),
 }
@@ -19,14 +16,13 @@ pub enum EngineError {
 ///
 /// No files are moved; the returned `Plan` describes every intended action.
 /// `alias_map` must be keyed by normalised alias (already lowercased when
-/// `config.case_insensitive` is true) and map to the name person name.
+/// `config.case_insensitive` is true) and map to the person name.
 pub fn build_plan(
     source_dir: &Path,
     config: &Config,
     alias_map: &HashMap<String, String>,
     dest_override: Option<&Path>,
 ) -> Result<Plan, EngineError> {
-    let parser = FilenameParser::new(&config.filename_pattern)?;
     let dest_root = dest_override.unwrap_or(&config.destination_root);
 
     let extensions: HashSet<String> =
@@ -64,34 +60,35 @@ pub fn build_plan(
             None => continue,
         };
 
-        // Extract username from filename.
-        let username = match parser.extract_username(filename) {
-            Some(u) => u,
-            None => {
-                plan.actions.push(PlannedAction::Skip {
-                    src: path.to_path_buf(),
-                    reason: SkipReason::Unparseable,
-                });
-                continue;
-            }
-        };
-
-        // Look up alias (key is already normalised by the caller).
-        let lookup_key = if config.case_insensitive {
-            username.to_lowercase()
+        // Substring match: find any alias that appears in the filename.
+        // alias_map keys are already normalised (lowercased if case_insensitive).
+        let haystack = if config.case_insensitive {
+            filename.to_lowercase()
         } else {
-            username.clone()
+            filename.to_string()
         };
 
-        let name = match alias_map.get(&lookup_key) {
-            Some(c) => c.clone(),
-            None => {
+        let mut matched_person: Option<&str> = None;
+        let mut ambiguous = false;
+        for (alias, person) in alias_map {
+            if haystack.contains(alias.as_str()) {
+                match matched_person {
+                    None => matched_person = Some(person),
+                    Some(existing) if existing == person => {}
+                    Some(_) => { ambiguous = true; break; }
+                }
+            }
+        }
+
+        let name = match (matched_person, ambiguous) {
+            (_, true) | (None, _) => {
                 plan.actions.push(PlannedAction::Skip {
                     src: path.to_path_buf(),
-                    reason: SkipReason::UnknownUsername(username),
+                    reason: SkipReason::UnknownUsername(filename.to_string()),
                 });
                 continue;
             }
+            (Some(n), false) => n.to_string(),
         };
 
         let safe_dir = sanitise_dir_name(&name);
@@ -183,7 +180,6 @@ mod tests {
     fn test_config(dest: &Path) -> Config {
         Config {
             destination_root: dest.to_path_buf(),
-            filename_pattern: r"^(?P<username>[^_]+)_".to_string(),
             case_insensitive: true,
             extensions: vec!["jpg".into(), "png".into()],
             database: None,
@@ -194,7 +190,7 @@ mod tests {
     fn known_file_planned_for_move() {
         let inbox = tempdir().unwrap();
         let dest = tempdir().unwrap();
-        write_file(&inbox.path().join("joeBloggs_001.jpg"), b"img");
+        write_file(&inbox.path().join("joebloggs-20251203.jpg"), b"img");
 
         let map = alias_map(&[("joebloggs", "Joe Bloggs")]);
         let config = test_config(dest.path());
@@ -208,9 +204,9 @@ mod tests {
     fn unknown_username_leaves_file_in_place() {
         let inbox = tempdir().unwrap();
         let dest = tempdir().unwrap();
-        write_file(&inbox.path().join("unknown_001.jpg"), b"img");
+        write_file(&inbox.path().join("unknown-20251203.jpg"), b"img");
 
-        let map = alias_map(&[]);
+        let map = alias_map(&[("joebloggs", "Joe Bloggs")]);
         let config = test_config(dest.path());
         let plan = build_plan(inbox.path(), &config, &map, None).unwrap();
 
@@ -221,18 +217,19 @@ mod tests {
     }
 
     #[test]
-    fn unparseable_filename_skipped() {
+    fn ambiguous_match_leaves_file_in_place() {
         let inbox = tempdir().unwrap();
         let dest = tempdir().unwrap();
-        write_file(&inbox.path().join("nounderscore.jpg"), b"img");
+        // filename contains both "joe" (Joe Bloggs) and "joe-bloggs" (Jane Doe)
+        write_file(&inbox.path().join("joe-bloggs-20251203.jpg"), b"img");
 
-        let map = alias_map(&[("nounderscore", "Someone")]);
+        let map = alias_map(&[("joe", "Joe Bloggs"), ("joe-bloggs", "Jane Doe")]);
         let config = test_config(dest.path());
         let plan = build_plan(inbox.path(), &config, &map, None).unwrap();
 
         assert!(matches!(
             plan.actions[0],
-            PlannedAction::Skip { reason: SkipReason::Unparseable, .. }
+            PlannedAction::Skip { reason: SkipReason::UnknownUsername(_), .. }
         ));
     }
 
@@ -241,10 +238,9 @@ mod tests {
         let inbox = tempdir().unwrap();
         let dest = tempdir().unwrap();
         let content = b"image bytes";
-        write_file(&inbox.path().join("joeBloggs_001.jpg"), content);
-        // Pre-place an identical file at the destination.
+        write_file(&inbox.path().join("joebloggs-20251203.jpg"), content);
         write_file(
-            &dest.path().join("Joe Bloggs").join("joeBloggs_001.jpg"),
+            &dest.path().join("Joe Bloggs").join("joebloggs-20251203.jpg"),
             content,
         );
 
@@ -262,9 +258,9 @@ mod tests {
     fn differing_clash_renamed() {
         let inbox = tempdir().unwrap();
         let dest = tempdir().unwrap();
-        write_file(&inbox.path().join("joeBloggs_001.jpg"), b"new image");
+        write_file(&inbox.path().join("joebloggs-20251203.jpg"), b"new image");
         write_file(
-            &dest.path().join("Joe Bloggs").join("joeBloggs_001.jpg"),
+            &dest.path().join("Joe Bloggs").join("joebloggs-20251203.jpg"),
             b"existing image",
         );
 
@@ -284,7 +280,7 @@ mod tests {
     fn execute_plan_moves_files() {
         let inbox = tempdir().unwrap();
         let dest = tempdir().unwrap();
-        write_file(&inbox.path().join("joeBloggs_001.jpg"), b"img");
+        write_file(&inbox.path().join("joebloggs-20251203.jpg"), b"img");
 
         let map = alias_map(&[("joebloggs", "Joe Bloggs")]);
         let config = test_config(dest.path());
@@ -292,11 +288,11 @@ mod tests {
         let report = execute_plan(&plan);
 
         assert_eq!(report.moved(), 1);
-        assert!(!inbox.path().join("joeBloggs_001.jpg").exists());
+        assert!(!inbox.path().join("joebloggs-20251203.jpg").exists());
         assert!(dest
             .path()
             .join("Joe Bloggs")
-            .join("joeBloggs_001.jpg")
+            .join("joebloggs-20251203.jpg")
             .exists());
     }
 
@@ -304,7 +300,7 @@ mod tests {
     fn non_image_extensions_ignored() {
         let inbox = tempdir().unwrap();
         let dest = tempdir().unwrap();
-        write_file(&inbox.path().join("joeBloggs_001.txt"), b"text");
+        write_file(&inbox.path().join("joebloggs-20251203.txt"), b"text");
 
         let map = alias_map(&[("joebloggs", "Joe Bloggs")]);
         let config = test_config(dest.path());

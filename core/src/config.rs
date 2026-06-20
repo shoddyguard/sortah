@@ -6,7 +6,6 @@ use thiserror::Error;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub destination_root: PathBuf,
-    pub filename_pattern: String,
     #[serde(default = "default_case_insensitive")]
     pub case_insensitive: bool,
     #[serde(default = "default_extensions")]
@@ -34,10 +33,6 @@ pub enum ConfigError {
     Io(#[from] std::io::Error),
     #[error("YAML parse error: {0}")]
     Yaml(#[from] serde_yaml::Error),
-    #[error("Invalid filename_pattern: {0}")]
-    InvalidPattern(#[from] regex::Error),
-    #[error("filename_pattern has no 'username' capture group")]
-    MissingUsernameGroup,
 }
 
 impl Config {
@@ -54,10 +49,6 @@ impl Config {
 
     /// Validate that the config values are well-formed.
     pub fn validate(&self) -> Result<(), ConfigError> {
-        let re = regex::Regex::new(&self.filename_pattern)?;
-        if re.capture_names().flatten().all(|n| n != "username") {
-            return Err(ConfigError::MissingUsernameGroup);
-        }
         Ok(())
     }
 
@@ -89,17 +80,12 @@ impl Config {
 # Where sorted images will be placed. Each person gets a subdirectory here.
 destination_root: ~/Pictures/Friends
 
-# Regex applied to each image filename. Must contain a named capture group `username`.
-# Example: for filenames like "joeBloggs_IMG_1234.jpg", this extracts "joeBloggs".
-filename_pattern: '^(?P<username>[^_]+)_'
-
-# Whether to compare usernames case-insensitively when matching against stored aliases.
-# Aliases are always stored verbatim; this only affects the comparison at sort time.
-# When true, a file with username "JoeBloggs" matches a stored alias "joeBloggs".
+# Whether to match aliases case-insensitively against filenames.
+# When true, alias "joeBloggs" matches a file containing "joebloggs".
 case_insensitive: true
 
 # Image file extensions to process (case-insensitive).
-extensions: [jpg, jpeg, png, gif, webp]
+extensions: [jpg, jpeg, png, gif, webp, mp4]
 
 # Path to the alias database. Defaults to the platform data directory when omitted.
 # database: ~/.local/share/sortah/mappings.db
@@ -142,29 +128,15 @@ mod tests {
 
     #[test]
     fn valid_config_loads() {
-        let f = write_config(
-            "destination_root: /tmp/dest\nfilename_pattern: '^(?P<username>[^_]+)_'\n",
-        );
+        let f = write_config("destination_root: /tmp/dest\n");
         let config = Config::load(f.path()).unwrap();
-        assert_eq!(config.filename_pattern, "^(?P<username>[^_]+)_");
         assert!(config.case_insensitive); // default
     }
 
     #[test]
-    fn missing_username_group_is_rejected() {
-        let f = write_config(
-            "destination_root: /tmp/dest\nfilename_pattern: '^([^_]+)_'\n",
-        );
-        let err = Config::load(f.path()).unwrap_err();
-        assert!(matches!(err, ConfigError::MissingUsernameGroup));
-    }
-
-    #[test]
-    fn invalid_regex_is_rejected() {
-        let f = write_config(
-            "destination_root: /tmp/dest\nfilename_pattern: '[invalid'\n",
-        );
-        let err = Config::load(f.path()).unwrap_err();
-        assert!(matches!(err, ConfigError::InvalidPattern(_)));
+    fn case_insensitive_can_be_disabled() {
+        let f = write_config("destination_root: /tmp/dest\ncase_insensitive: false\n");
+        let config = Config::load(f.path()).unwrap();
+        assert!(!config.case_insensitive);
     }
 }

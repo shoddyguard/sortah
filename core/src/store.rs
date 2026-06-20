@@ -223,17 +223,31 @@ impl Store {
 
     // ---- Alias map for sorting ----
 
-    /// Build an in-memory map of (normalised alias) -> name name for use during sort.
+    /// Build an in-memory map of (normalised alias) -> name for use during sort.
     /// When `case_insensitive` is true, keys are lowercased; stored aliases are not changed.
+    /// Each person's own name is included as an implicit alias so that filenames containing
+    /// the person name directly sort correctly without needing a redundant explicit alias.
+    /// Explicit aliases take precedence over the implicit name entry on collision.
     pub fn load_alias_map(
         &self,
         case_insensitive: bool,
     ) -> Result<HashMap<String, String>, StoreError> {
+        let mut map = HashMap::new();
+
+        // Seed with each person's own name as an implicit alias.
+        let mut people_stmt = self.conn.prepare("SELECT name FROM people")?;
+        let people_rows = people_stmt.query_map([], |row| row.get::<_, String>(0))?;
+        for row in people_rows {
+            let name = row?;
+            let key = if case_insensitive { name.to_lowercase() } else { name.clone() };
+            map.insert(key, name);
+        }
+
+        // Overlay explicit aliases — these take precedence over the implicit name entry.
         let mut stmt = self.conn.prepare(
             "SELECT a.alias, p.name
              FROM aliases a JOIN people p ON p.id = a.person_id",
         )?;
-        let mut map = HashMap::new();
         let rows = stmt.query_map([], |row| {
             let alias: String = row.get(0)?;
             let name: String = row.get(1)?;
@@ -241,11 +255,7 @@ impl Store {
         })?;
         for row in rows {
             let (alias, name) = row?;
-            let key = if case_insensitive {
-                alias.to_lowercase()
-            } else {
-                alias
-            };
+            let key = if case_insensitive { alias.to_lowercase() } else { alias };
             // Last-write wins on collision — validate warns about this separately.
             map.insert(key, name);
         }
@@ -416,6 +426,24 @@ mod tests {
         // Stored as "joeBloggs", key lowercased to "joebloggs"
         assert_eq!(map.get("joebloggs").map(String::as_str), Some("Joe Bloggs"));
         assert!(map.get("joeBloggs").is_none());
+    }
+
+    #[test]
+    fn person_name_is_implicit_alias() {
+        let s = store();
+        s.add_person("joebloggs").unwrap();
+        // No explicit alias added
+        let map = s.load_alias_map(false).unwrap();
+        assert_eq!(map.get("joebloggs").map(String::as_str), Some("joebloggs"));
+    }
+
+    #[test]
+    fn explicit_alias_takes_precedence_over_implicit_name() {
+        let s = store();
+        s.add_person("Joe Bloggs").unwrap();
+        s.add_alias("Joe Bloggs", "Joe Bloggs").unwrap();
+        let map = s.load_alias_map(false).unwrap();
+        assert_eq!(map.get("Joe Bloggs").map(String::as_str), Some("Joe Bloggs"));
     }
 
     #[test]

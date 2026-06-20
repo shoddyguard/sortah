@@ -1,7 +1,6 @@
 pub mod config;
 pub mod engine;
 pub mod fsutil;
-pub mod parse;
 pub mod report;
 pub mod store;
 

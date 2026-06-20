@@ -85,7 +85,6 @@ fn handle_config(cmd: ConfigCommand, config_path: Option<PathBuf>) -> Result<()>
             let config = load_config(config_path)?;
             println!("Config OK");
             println!("  destination_root: {}", config.destination_root.display());
-            println!("  filename_pattern: {}", config.filename_pattern);
             println!("  case_insensitive: {}", config.case_insensitive);
             println!("  extensions:       {}", config.extensions.join(", "));
 
@@ -142,9 +141,6 @@ fn handle_sort(args: cli::SortArgs, config_path: Option<PathBuf>) -> Result<()> 
     }
     if summary.unknown_total() > 0 {
         println!("  Skip (unknown):    {}", summary.unknown_total());
-    }
-    if summary.unparseable > 0 {
-        println!("  Skip (no match):   {}", summary.unparseable);
     }
 
     if !summary.by_person.is_empty() {

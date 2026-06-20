@@ -404,6 +404,7 @@ Please review the changes and merge if they look good.
 #>
 task Build {
     Write-Build White "Building '$BinaryName'"
+    $env:CARGO_TARGET_DIR = $Global:BrownserveRepoBuildOutputDirectory
     $CargoArgs = @('build', '--release')
     if ($Target)
     {
@@ -460,14 +461,13 @@ task Package GetReleaseHistory, Build, {
     $script:ReleaseVersion = $script:Changelog.LatestVersion.Version.ToString()
     $script:PrefixedVersion = "v$script:ReleaseVersion"
 
-    # Locate the compiled binary
     $BinDir = if ($Target)
     {
-        Join-Path $Global:BrownserveRepoRootDirectory 'target' $Target 'release'
+        Join-Path $Global:BrownserveRepoBuildOutputDirectory $Target 'release'
     }
     else
     {
-        Join-Path $Global:BrownserveRepoRootDirectory 'target' 'release'
+        Join-Path $Global:BrownserveRepoBuildOutputDirectory 'release'
     }
     $BinaryFileName = if ($IsWindows) { "$BinaryName.exe" } else { $BinaryName }
     $BinaryPath     = Join-Path $BinDir $BinaryFileName

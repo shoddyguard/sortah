@@ -6,10 +6,8 @@ use std::path::PathBuf;
 pub enum SkipReason {
     /// An identical file already exists at the destination.
     Duplicate,
-    /// The extracted username has no entry in the alias mapping.
+    /// No alias in the mapping matched this filename.
     UnknownUsername(String),
-    /// The filename does not match the configured pattern.
-    Unparseable,
 }
 
 /// A single planned file move (includes clash-renamed destinations).
@@ -49,7 +47,6 @@ impl Plan {
                     SkipReason::UnknownUsername(u) => {
                         *unknown_counts.entry(u.clone()).or_insert(0) += 1;
                     }
-                    SkipReason::Unparseable => summary.unparseable += 1,
                 },
             }
         }
@@ -68,8 +65,7 @@ pub struct PlanSummary {
     pub to_move: usize,
     pub skip_duplicate: usize,
     pub unknown_usernames: Vec<(String, usize)>,
-    pub unparseable: usize,
-    /// Files to move per name person name.
+    /// Files to move per person name.
     pub by_person: HashMap<String, usize>,
 }
 
