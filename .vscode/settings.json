@@ -2,9 +2,6 @@
   "cSpell.language": "en,en-GB",
   "cSpell.words": [
     "Brownserve",
-    "paket",
-    "Teamcity",
-    "TMPDIR",
     "Choco",
     "CICD",
     "dedupe",
@@ -12,6 +9,10 @@
     "mrkdwn",
     "nugetconfig",
     "nupkg",
+    "paket",
+    "sortah",
+    "Teamcity",
+    "TMPDIR",
     "yzhang"
   ],
   "powershell.codeFormatting.autoCorrectAliases": true,
