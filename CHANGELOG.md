@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Release
 
-## [v0.1.0](https://github.com/shoddyguard/sortah/tree/v1.0.0) (2026-06-20)
+## [v1.0.0](https://github.com/shoddyguard/sortah/tree/v1.0.0) (2026-06-20)
 
 ### Changed
 
