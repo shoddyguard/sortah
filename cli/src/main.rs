@@ -10,14 +10,26 @@ use cli::{AliasCommand, Cli, Command, ConfigCommand, PersonCommand};
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Config(cmd) => handle_config(cmd, cli.config),
-        Command::Sort(args) => handle_sort(args, cli.config),
-        Command::Person(cmd) => handle_person(cmd, cli.config),
-        Command::Alias(cmd) => handle_alias(cmd, cli.config),
-        Command::List(args) => handle_list(args, cli.config),
-        Command::Import(args) => handle_import(args, cli.config),
-        Command::Export(args) => handle_export(args, cli.config),
+        Some(Command::Config(cmd)) => handle_config(cmd, cli.config),
+        Some(Command::Sort(args)) => handle_sort(args, cli.config),
+        Some(Command::Person(cmd)) => handle_person(cmd, cli.config),
+        Some(Command::Alias(cmd)) => handle_alias(cmd, cli.config),
+        Some(Command::List(args)) => handle_list(args, cli.config),
+        Some(Command::Import(args)) => handle_import(args, cli.config),
+        Some(Command::Export(args)) => handle_export(args, cli.config),
+        None => launch_gui(cli.config),
     }
+}
+
+#[cfg(feature = "gui")]
+fn launch_gui(config: Option<PathBuf>) -> Result<()> {
+    sortah_gui::run(config).context("GUI error")
+}
+
+#[cfg(not(feature = "gui"))]
+fn launch_gui(_config: Option<PathBuf>) -> Result<()> {
+    eprintln!("This build does not include the GUI. Run 'sortah --help' for available commands.");
+    std::process::exit(1);
 }
 
 // ---- Helpers ----

@@ -92,6 +92,16 @@ impl Config {
         self.database.clone().or_else(Self::default_db_path)
     }
 
+    /// Serialize the current config to YAML and write it to `path`.
+    pub fn save(&self, path: &Path) -> Result<(), ConfigError> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let text = serde_yaml::to_string(self)?;
+        std::fs::write(path, text)?;
+        Ok(())
+    }
+
     /// Write a commented starter config to the given path, creating parent directories as needed.
     pub fn write_template(path: &Path) -> Result<(), ConfigError> {
         if let Some(parent) = path.parent() {

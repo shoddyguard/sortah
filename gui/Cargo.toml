@@ -1,0 +1,22 @@
+[package]
+name = "sortah-gui"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "sortah_gui"
+path = "src/lib.rs"
+
+[dependencies]
+sortah-core = { path = "../core" }
+slint = { version = "1.16", default-features = false, features = [
+    "std",
+    "compat-1-2",
+    "backend-winit",
+    "renderer-software",
+] }
+rfd = "0.17"
+anyhow = "1"
+
+[build-dependencies]
+slint-build = "1.16"
