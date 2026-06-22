@@ -7,15 +7,14 @@
 #>
 Describe 'sortah binary' {
     BeforeAll {
-        # Locate the binary under target/release/ relative to the repo root.
+        # Locate the binary under the build output directory set by CARGO_TARGET_DIR.
         # On Windows the executable has a .exe extension.
-        $RepoRoot = $Global:BrownserveRepoRootDirectory
         $BinaryName = if ($IsWindows) { 'sortah.exe' } else { 'sortah' }
-        $script:BinaryPath = Join-Path $RepoRoot 'target' 'release' $BinaryName
+        $script:BinaryPath = Join-Path $Global:BrownserveRepoBuildOutputDirectory 'release' $BinaryName
     }
 
     Context 'Binary exists' {
-        It 'should be present in target/release' {
+        It 'should be present in the build output directory' {
             $script:BinaryPath | Should -Exist
         }
     }
