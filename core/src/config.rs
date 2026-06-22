@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
+/// Random comment to trigger the CI
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub destination_root: PathBuf,
