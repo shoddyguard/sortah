@@ -67,9 +67,7 @@ pub fn setup_timer(
                 let mut st = state.borrow_mut();
                 match result {
                     JobResult::PlanReady(plan) => {
-                        let summary = models::format_summary(&plan);
                         let plan_model = models::plan_to_model(&plan);
-                        win.set_sort_summary(summary.into());
                         win.set_sort_plan_rows(plan_model);
                         win.set_sort_has_plan(true);
                         win.set_sort_busy(false);
@@ -84,7 +82,6 @@ pub fn setup_timer(
                         win.set_sort_busy(false);
                         win.set_sort_has_plan(false);
                         win.set_sort_plan_rows(models::empty_plan_model());
-                        win.set_sort_summary("".into());
                         let status = if report.failed() > 0 {
                             format!(
                                 "Done. Moved {} file(s). {} failed.",
@@ -130,7 +127,6 @@ fn register_sort_callbacks(
                 if let Some(win) = weak.upgrade() {
                     win.set_sort_source(path.to_string_lossy().to_string().into());
                     win.set_sort_has_plan(false);
-                    win.set_sort_summary("".into());
                     win.set_sort_plan_rows(models::empty_plan_model());
                     win.set_sort_status("".into());
                 }
@@ -171,7 +167,6 @@ fn register_sort_callbacks(
             win.set_sort_busy(true);
             win.set_sort_status("Building plan…".into());
             win.set_sort_has_plan(false);
-            win.set_sort_summary("".into());
             win.set_sort_plan_rows(models::empty_plan_model());
             let _ = tx.send(Job::BuildPlan { source_dir, config, alias_map, dest_root });
         });

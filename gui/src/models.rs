@@ -1,6 +1,6 @@
 use crate::{AliasRow, PersonRow, PlanRow};
 use slint::{ModelRc, VecModel};
-use sortah_core::report::{Plan, PlannedAction};
+use sortah_core::report::Plan;
 use sortah_core::store::{Alias, Person};
 use std::rc::Rc;
 
@@ -24,27 +24,13 @@ pub fn aliases_to_model(aliases: &[Alias]) -> ModelRc<AliasRow> {
 }
 
 pub fn plan_to_model(plan: &Plan) -> ModelRc<PlanRow> {
-    let rows: Vec<PlanRow> = plan
-        .actions
-        .iter()
-        .filter_map(|action| match action {
-            PlannedAction::Move(m) => {
-                let filename = m.src.file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("")
-                    .to_string();
-                let dest = m.dst.parent()
-                    .and_then(|p| p.file_name())
-                    .and_then(|n| n.to_str())
-                    .map(|s| s.to_string())
-                    .unwrap_or_default();
-                Some(PlanRow {
-                    filename: filename.into(),
-                    person: m.name.clone().into(),
-                    dest: dest.into(),
-                })
-            }
-            _ => None,
+    let summary = format_summary(plan);
+    let rows: Vec<PlanRow> = summary
+        .lines()
+        .map(|line| PlanRow {
+            filename: line.into(),
+            person: "".into(),
+            dest: "".into(),
         })
         .collect();
     ModelRc::from(Rc::new(VecModel::from(rows)))

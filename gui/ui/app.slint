@@ -35,7 +35,6 @@ export component AppWindow inherits Window {
     in-out property <bool>   sort-busy: false;
     in-out property <string> sort-status: "";
     in-out property <bool>   sort-has-plan: false;
-    in-out property <string> sort-summary: "";
     in-out property <[PlanRow]> sort-plan-rows: [];
 
     callback sort-pick-source();
@@ -72,8 +71,14 @@ export component AppWindow inherits Window {
     callback cfg-reload();
     callback cfg-validate();
 
-    // ── Layout ────────────────────────────────────────────────────────────────
+    // ── Top-level layout ──────────────────────────────────────────────────────
+    // Explicitly bind to root (window) dimensions so layout flows TOP-DOWN.
+    // Without this, Slint computes the HLayout height BOTTOM-UP from children's
+    // natural heights, which includes the ListView's full item-list height, so
+    // the ListView never gets a bounded height and can't scroll.
     HorizontalLayout {
+        width: root.width;
+        height: root.height;
         spacing: 0px;
         padding: 0px;
 
@@ -113,387 +118,354 @@ export component AppWindow inherits Window {
 
         Rectangle { width: 1px; background: Palette.border; }
 
-        // ── Content area ─────────────────────────────────────────────────────
-        Rectangle {
+        // ════════════════════════════════════════════════════════════════
+        // SORT VIEW — direct child of HorizontalLayout so height = window height
+        // ════════════════════════════════════════════════════════════════
+        if root.cur == 0: VerticalLayout {
             horizontal-stretch: 1;
+            padding: 14px;
+            spacing: 10px;
 
-            // ════════════════════════════════════════════════════════════════
-            // SORT VIEW
-            // ════════════════════════════════════════════════════════════════
-            if root.cur == 0: VerticalLayout {
-                width: parent.width;
-                height: parent.height;
-                padding: 14px;
-                spacing: 10px;
-
-                // Source folder row
-                HorizontalLayout {
-                    spacing: 6px;
-                    Text {
-                        text: "Source folder:";
-                        vertical-alignment: center;
-                        width: 110px;
-                    }
-                    LineEdit {
-                        horizontal-stretch: 1;
-                        text: root.sort-source;
-                        placeholder-text: "Pick a folder to sort";
-                        read-only: true;
-                    }
-                    Button {
-                        text: "Pick Folder";
-                        enabled: !root.sort-busy;
-                        clicked => { root.sort-pick-source(); }
-                    }
+            // Source folder row
+            HorizontalLayout {
+                spacing: 6px;
+                Text {
+                    text: "Source folder:";
+                    vertical-alignment: center;
+                    width: 110px;
                 }
+                LineEdit {
+                    horizontal-stretch: 1;
+                    text: root.sort-source;
+                    placeholder-text: "Pick a folder to sort";
+                    read-only: true;
+                }
+                Button {
+                    text: "Pick Folder";
+                    enabled: !root.sort-busy;
+                    clicked => { root.sort-pick-source(); }
+                }
+            }
 
-                // Action row
-                HorizontalLayout {
-                    spacing: 8px;
-                    alignment: start;
-                    Button {
-                        text: "Preview";
-                        enabled: root.sort-source != "" && !root.sort-busy;
-                        clicked => { root.sort-preview(); }
-                    }
-                    Button {
-                        text: "Sort Now";
-                        primary: true;
-                        enabled: root.sort-has-plan && !root.sort-busy;
-                        clicked => { root.sort-execute(); }
-                    }
-                    if root.sort-busy: Text {
-                        text: "Working…";
+            // Action row
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Button {
+                    text: "Preview";
+                    enabled: root.sort-source != "" && !root.sort-busy;
+                    clicked => { root.sort-preview(); }
+                }
+                Button {
+                    text: "Sort Now";
+                    primary: true;
+                    enabled: root.sort-has-plan && !root.sort-busy;
+                    clicked => { root.sort-execute(); }
+                }
+                if root.sort-busy: Text {
+                    text: "Working…";
+                    vertical-alignment: center;
+                    color: Palette.foreground;
+                }
+            }
+
+            // Scrollable summary — one text row per line of format_summary output,
+            // identical to what the CLI prints, just scrollable.
+            ListView {
+                vertical-stretch: 1;
+                visible: root.sort-has-plan;
+                for row in root.sort-plan-rows: Rectangle {
+                    height: 22px;
+                    Text {
+                        x: 8px;
+                        width: parent.width - 16px;
+                        height: parent.height;
+                        text: row.filename;
                         vertical-alignment: center;
                         color: Palette.foreground;
                     }
                 }
-
-                // Summary box
-                if root.sort-summary != "": Rectangle {
-                    border-radius: 4px;
-                    background: Palette.alternate-background;
-                    VerticalLayout {
-                        padding: 10px;
-                        Text {
-                            text: root.sort-summary;
-                            wrap: word-wrap;
-                            color: Palette.foreground;
-                        }
-                    }
-                }
-
-                // Plan list header — hidden when no plan
-                HorizontalLayout {
-                    visible: root.sort-has-plan;
-                    padding-left: 4px;
-                    padding-right: 4px;
-                    spacing: 8px;
-                    Text { text: "File";        font-weight: 700; horizontal-stretch: 2; color: Palette.foreground; }
-                    Text { text: "Person";      font-weight: 700; horizontal-stretch: 1; color: Palette.foreground; }
-                    Text { text: "Destination"; font-weight: 700; horizontal-stretch: 2; color: Palette.foreground; }
-                }
-
-                // Plan list — always participates in layout so vertical-stretch is respected;
-                // visible: false collapses rendering but keeps the stretch slot, ensuring the
-                // list is height-bounded and scrollable when a large plan is present.
-                ListView {
-                    vertical-stretch: 1;
-                    visible: root.sort-has-plan;
-                    for row in root.sort-plan-rows: HorizontalLayout {
-                        height: 26px;
-                        padding-left: 4px;
-                        padding-right: 4px;
-                        spacing: 8px;
-                        Text { text: row.filename; horizontal-stretch: 2; overflow: elide; vertical-alignment: center; color: Palette.foreground; }
-                        Text { text: row.person;   horizontal-stretch: 1; overflow: elide; vertical-alignment: center; color: Palette.foreground; }
-                        Text { text: row.dest;     horizontal-stretch: 2; overflow: elide; vertical-alignment: center; color: Palette.foreground; }
-                    }
-                }
-
-                // Status
-                Text {
-                    text: root.sort-status;
-                    color: Palette.foreground;
-                    wrap: word-wrap;
-                }
             }
 
-            // ════════════════════════════════════════════════════════════════
-            // PEOPLE VIEW
-            // ════════════════════════════════════════════════════════════════
-            if root.cur == 1: VerticalLayout {
-                width: parent.width;
-                height: parent.height;
+            // Status
+            Text {
+                text: root.sort-status;
+                color: Palette.foreground;
+                wrap: word-wrap;
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════
+        // PEOPLE VIEW
+        // ════════════════════════════════════════════════════════════════
+        if root.cur == 1: VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 0px;
+            padding: 0px;
+
+            HorizontalLayout {
+                vertical-stretch: 1;
                 spacing: 0px;
-                padding: 0px;
 
-                HorizontalLayout {
-                    vertical-stretch: 1;
-                    spacing: 0px;
+                // ── Left: people list + add/remove form ──────────────
+                VerticalLayout {
+                    width: 250px;
+                    padding: 10px;
+                    spacing: 6px;
 
-                    // ── Left: people list + add/remove form ──────────────
-                    VerticalLayout {
-                        width: 250px;
-                        padding: 10px;
-                        spacing: 6px;
+                    Text { text: "People"; font-weight: 700; font-size: 14px; color: Palette.foreground; }
 
-                        Text { text: "People"; font-weight: 700; font-size: 14px; color: Palette.foreground; }
-
-                        ListView {
-                            vertical-stretch: 1;
-                            for row[idx] in root.people-list: Rectangle {
-                                height: 30px;
-                                border-radius: 3px;
-                                background: idx == root.people-sel
-                                    ? Palette.selection-background
-                                    : transparent;
-                                HorizontalLayout {
-                                    padding-left: 6px;
-                                    padding-right: 4px;
-                                    spacing: 4px;
-                                    Text {
-                                        text: row.name;
-                                        vertical-alignment: center;
-                                        horizontal-stretch: 1;
-                                        overflow: elide;
-                                        color: idx == root.people-sel
-                                            ? Palette.selection-foreground
-                                            : Palette.foreground;
-                                    }
-                                    if row.category != "": Text {
-                                        text: "[" + row.category + "]";
-                                        vertical-alignment: center;
-                                        font-size: 11px;
-                                        color: idx == root.people-sel
-                                            ? Palette.selection-foreground
-                                            : Palette.foreground;
-                                    }
-                                }
-                                TouchArea { clicked => { root.people-select(idx); } }
-                            }
-                        }
-
-                        // Add person form
-                        property <string> np-name;
-                        property <string> np-cat;
-
-                        Text { text: "Add person"; font-size: 12px; color: Palette.foreground; }
-                        LineEdit { text <=> np-name; placeholder-text: "Name"; }
-                        LineEdit { text <=> np-cat;  placeholder-text: "Category (optional)"; }
-                        HorizontalLayout {
-                            spacing: 4px;
-                            Button {
-                                text: "Add";
-                                enabled: np-name != "";
-                                clicked => {
-                                    root.people-add(np-name, np-cat);
-                                    np-name = "";
-                                    np-cat = "";
-                                }
-                            }
-                            Button {
-                                text: "Remove";
-                                enabled: root.people-sel >= 0;
-                                clicked => { root.people-remove(root.people-sel-name); }
-                            }
-                        }
-                    }
-
-                    Rectangle { width: 1px; background: Palette.border; }
-
-                    // ── Right: aliases + category editor ─────────────────
-                    VerticalLayout {
-                        horizontal-stretch: 1;
-                        padding: 10px;
-                        spacing: 6px;
-
-                        Text {
-                            text: root.people-sel >= 0
-                                ? "Aliases for: " + root.people-sel-name
-                                : "Select a person to manage aliases";
-                            font-weight: 700;
-                            font-size: 14px;
-                            color: Palette.foreground;
-                        }
-
-                        // Alias list — each row has inline remove button
-                        ListView {
-                            vertical-stretch: 1;
-                            for row in root.alias-list: HorizontalLayout {
-                                height: 30px;
+                    ListView {
+                        vertical-stretch: 1;
+                        for row[idx] in root.people-list: Rectangle {
+                            height: 30px;
+                            border-radius: 3px;
+                            background: idx == root.people-sel
+                                ? Palette.selection-background
+                                : transparent;
+                            HorizontalLayout {
                                 padding-left: 6px;
                                 padding-right: 4px;
                                 spacing: 4px;
                                 Text {
-                                    text: row.alias;
+                                    text: row.name;
                                     vertical-alignment: center;
                                     horizontal-stretch: 1;
-                                    color: Palette.foreground;
+                                    overflow: elide;
+                                    color: idx == root.people-sel
+                                        ? Palette.selection-foreground
+                                        : Palette.foreground;
                                 }
-                                Button {
-                                    text: "×";
-                                    clicked => { root.alias-remove(row.alias); }
+                                if row.category != "": Text {
+                                    text: "[" + row.category + "]";
+                                    vertical-alignment: center;
+                                    font-size: 11px;
+                                    color: idx == root.people-sel
+                                        ? Palette.selection-foreground
+                                        : Palette.foreground;
                                 }
+                            }
+                            TouchArea { clicked => { root.people-select(idx); } }
+                        }
+                    }
+
+                    // Add person form
+                    property <string> np-name;
+                    property <string> np-cat;
+
+                    Text { text: "Add person"; font-size: 12px; color: Palette.foreground; }
+                    LineEdit { text <=> np-name; placeholder-text: "Name"; }
+                    LineEdit { text <=> np-cat;  placeholder-text: "Category (optional)"; }
+                    HorizontalLayout {
+                        spacing: 4px;
+                        Button {
+                            text: "Add";
+                            enabled: np-name != "";
+                            clicked => {
+                                root.people-add(np-name, np-cat);
+                                np-name = "";
+                                np-cat = "";
                             }
                         }
-
-                        // Add alias form
-                        property <string> new-alias;
-                        Text { text: "Add alias"; font-size: 12px; color: Palette.foreground; }
-                        HorizontalLayout {
-                            spacing: 4px;
-                            LineEdit {
-                                horizontal-stretch: 1;
-                                text <=> new-alias;
-                                placeholder-text: "alias text";
-                                enabled: root.people-sel >= 0;
-                            }
-                            Button {
-                                text: "Add";
-                                enabled: new-alias != "" && root.people-sel >= 0;
-                                clicked => {
-                                    root.alias-add(root.people-sel-name, new-alias);
-                                    new-alias = "";
-                                }
-                            }
-                        }
-
-                        // Set category (for selected person)
-                        if root.people-sel >= 0: VerticalLayout {
-                            spacing: 4px;
-                            property <string> edit-cat;
-                            Text { text: "Category"; font-size: 12px; color: Palette.foreground; }
-                            HorizontalLayout {
-                                spacing: 4px;
-                                LineEdit {
-                                    horizontal-stretch: 1;
-                                    text <=> edit-cat;
-                                    placeholder-text: "Uncategorised";
-                                }
-                                Button {
-                                    text: "Set";
-                                    clicked => {
-                                        root.people-set-category(root.people-sel-name, edit-cat);
-                                    }
-                                }
-                            }
+                        Button {
+                            text: "Remove";
+                            enabled: root.people-sel >= 0;
+                            clicked => { root.people-remove(root.people-sel-name); }
                         }
                     }
                 }
 
-                // Bottom bar
-                Rectangle {
-                    height: 44px;
-                    background: Palette.alternate-background;
+                Rectangle { width: 1px; background: Palette.border; }
+
+                // ── Right: aliases + category editor ─────────────────
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    padding: 10px;
+                    spacing: 6px;
+
+                    Text {
+                        text: root.people-sel >= 0
+                            ? "Aliases for: " + root.people-sel-name
+                            : "Select a person to manage aliases";
+                        font-weight: 700;
+                        font-size: 14px;
+                        color: Palette.foreground;
+                    }
+
+                    // Alias list — always in layout so vertical-stretch is bounded
+                    ListView {
+                        vertical-stretch: 1;
+                        for row in root.alias-list: HorizontalLayout {
+                            height: 30px;
+                            padding-left: 6px;
+                            padding-right: 4px;
+                            spacing: 4px;
+                            Text {
+                                text: row.alias;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                                color: Palette.foreground;
+                            }
+                            Button {
+                                text: "×";
+                                clicked => { root.alias-remove(row.alias); }
+                            }
+                        }
+                    }
+
+                    // Add alias form
+                    property <string> new-alias;
+                    Text { text: "Add alias"; font-size: 12px; color: Palette.foreground; }
                     HorizontalLayout {
-                        padding: 8px;
-                        spacing: 8px;
-                        alignment: start;
-                        Button { text: "Import CSV"; clicked => { root.people-import-csv(); } }
-                        Button { text: "Export CSV"; clicked => { root.people-export-csv(); } }
-                        Text {
-                            text: root.people-status;
-                            vertical-alignment: center;
+                        spacing: 4px;
+                        LineEdit {
                             horizontal-stretch: 1;
-                            color: Palette.foreground;
-                            overflow: elide;
+                            text <=> new-alias;
+                            placeholder-text: "alias text";
+                            enabled: root.people-sel >= 0;
+                        }
+                        Button {
+                            text: "Add";
+                            enabled: new-alias != "" && root.people-sel >= 0;
+                            clicked => {
+                                root.alias-add(root.people-sel-name, new-alias);
+                                new-alias = "";
+                            }
+                        }
+                    }
+
+                    // Set category (for selected person)
+                    if root.people-sel >= 0: VerticalLayout {
+                        spacing: 4px;
+                        property <string> edit-cat;
+                        Text { text: "Category"; font-size: 12px; color: Palette.foreground; }
+                        HorizontalLayout {
+                            spacing: 4px;
+                            LineEdit {
+                                horizontal-stretch: 1;
+                                text <=> edit-cat;
+                                placeholder-text: "Uncategorised";
+                            }
+                            Button {
+                                text: "Set";
+                                clicked => {
+                                    root.people-set-category(root.people-sel-name, edit-cat);
+                                }
+                            }
                         }
                     }
                 }
             }
 
-            // ════════════════════════════════════════════════════════════════
-            // CONFIG VIEW
-            // ════════════════════════════════════════════════════════════════
-            if root.cur == 2: VerticalLayout {
-                width: parent.width;
-                height: parent.height;
-                padding: 20px;
-                spacing: 12px;
-                alignment: start;
-
-                Text { text: "Configuration"; font-size: 16px; font-weight: 700; color: Palette.foreground; }
-
-                // Paths (read-only info)
+            // Bottom bar
+            Rectangle {
+                height: 44px;
+                background: Palette.alternate-background;
                 HorizontalLayout {
-                    spacing: 8px;
-                    Text { text: "Config file:"; width: 100px; color: Palette.foreground; }
-                    Text { text: root.cfg-config-path; horizontal-stretch: 1; overflow: elide; color: Palette.foreground; }
-                }
-                HorizontalLayout {
-                    spacing: 8px;
-                    Text { text: "Database:";   width: 100px; color: Palette.foreground; }
-                    Text { text: root.cfg-db-path; horizontal-stretch: 1; overflow: elide; color: Palette.foreground; }
-                }
-
-                Rectangle { height: 4px; }
-
-                // Destination root
-                HorizontalLayout {
-                    spacing: 8px;
-                    Text { text: "Destination root:"; width: 150px; vertical-alignment: center; color: Palette.foreground; }
-                    LineEdit {
-                        horizontal-stretch: 1;
-                        text <=> root.cfg-dest-root;
-                        placeholder-text: "(none — use sort in place)";
-                        enabled: !root.cfg-sort-in-place;
-                    }
-                    Button {
-                        text: "Browse";
-                        enabled: !root.cfg-sort-in-place;
-                        clicked => { root.cfg-pick-dest(); }
-                    }
-                }
-
-                // Sort in place
-                HorizontalLayout {
-                    spacing: 8px;
-                    Text { text: "Sort in place:"; width: 150px; vertical-alignment: center; color: Palette.foreground; }
-                    CheckBox {
-                        checked <=> root.cfg-sort-in-place;
-                        text: "Organise files in the source folder";
-                    }
-                }
-
-                // Case insensitive
-                HorizontalLayout {
-                    spacing: 8px;
-                    Text { text: "Case insensitive:"; width: 150px; vertical-alignment: center; color: Palette.foreground; }
-                    CheckBox {
-                        checked <=> root.cfg-case-insensitive;
-                        text: "Match aliases case-insensitively";
-                    }
-                }
-
-                // Extensions
-                HorizontalLayout {
-                    spacing: 8px;
-                    Text { text: "Extensions:"; width: 150px; vertical-alignment: center; color: Palette.foreground; }
-                    LineEdit {
-                        horizontal-stretch: 1;
-                        text <=> root.cfg-extensions;
-                        placeholder-text: "jpg, jpeg, png, gif, webp";
-                    }
-                }
-
-                Rectangle { height: 4px; }
-
-                // Actions
-                HorizontalLayout {
+                    padding: 8px;
                     spacing: 8px;
                     alignment: start;
-                    Button { text: "Save";     primary: true; clicked => { root.cfg-save(); } }
-                    Button { text: "Reload";   clicked => { root.cfg-reload(); } }
-                    Button { text: "Validate"; clicked => { root.cfg-validate(); } }
+                    Button { text: "Import CSV"; clicked => { root.people-import-csv(); } }
+                    Button { text: "Export CSV"; clicked => { root.people-export-csv(); } }
+                    Text {
+                        text: root.people-status;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                        color: Palette.foreground;
+                        overflow: elide;
+                    }
                 }
+            }
+        }
 
-                // Status
-                Text {
-                    text: root.cfg-status;
-                    color: Palette.foreground;
-                    wrap: word-wrap;
+        // ════════════════════════════════════════════════════════════════
+        // CONFIG VIEW
+        // ════════════════════════════════════════════════════════════════
+        if root.cur == 2: VerticalLayout {
+            horizontal-stretch: 1;
+            padding: 20px;
+            spacing: 12px;
+            alignment: start;
+
+            Text { text: "Configuration"; font-size: 16px; font-weight: 700; color: Palette.foreground; }
+
+            HorizontalLayout {
+                spacing: 8px;
+                Text { text: "Config file:"; width: 100px; color: Palette.foreground; }
+                Text { text: root.cfg-config-path; horizontal-stretch: 1; overflow: elide; color: Palette.foreground; }
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                Text { text: "Database:";   width: 100px; color: Palette.foreground; }
+                Text { text: root.cfg-db-path; horizontal-stretch: 1; overflow: elide; color: Palette.foreground; }
+            }
+
+            Rectangle { height: 4px; }
+
+            // Destination root
+            HorizontalLayout {
+                spacing: 8px;
+                Text { text: "Destination root:"; width: 150px; vertical-alignment: center; color: Palette.foreground; }
+                LineEdit {
+                    horizontal-stretch: 1;
+                    text <=> root.cfg-dest-root;
+                    placeholder-text: "(none — use sort in place)";
+                    enabled: !root.cfg-sort-in-place;
                 }
+                Button {
+                    text: "Browse";
+                    enabled: !root.cfg-sort-in-place;
+                    clicked => { root.cfg-pick-dest(); }
+                }
+            }
+
+            // Sort in place
+            HorizontalLayout {
+                spacing: 8px;
+                Text { text: "Sort in place:"; width: 150px; vertical-alignment: center; color: Palette.foreground; }
+                CheckBox {
+                    checked <=> root.cfg-sort-in-place;
+                    text: "Organise files in the source folder";
+                }
+            }
+
+            // Case insensitive
+            HorizontalLayout {
+                spacing: 8px;
+                Text { text: "Case insensitive:"; width: 150px; vertical-alignment: center; color: Palette.foreground; }
+                CheckBox {
+                    checked <=> root.cfg-case-insensitive;
+                    text: "Match aliases case-insensitively";
+                }
+            }
+
+            // Extensions
+            HorizontalLayout {
+                spacing: 8px;
+                Text { text: "Extensions:"; width: 150px; vertical-alignment: center; color: Palette.foreground; }
+                LineEdit {
+                    horizontal-stretch: 1;
+                    text <=> root.cfg-extensions;
+                    placeholder-text: "jpg, jpeg, png, gif, webp";
+                }
+            }
+
+            Rectangle { height: 4px; }
+
+            // Actions
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Button { text: "Save";     primary: true; clicked => { root.cfg-save(); } }
+                Button { text: "Reload";   clicked => { root.cfg-reload(); } }
+                Button { text: "Validate"; clicked => { root.cfg-validate(); } }
+            }
+
+            // Status
+            Text {
+                text: root.cfg-status;
+                color: Palette.foreground;
+                wrap: word-wrap;
             }
         }
     }
