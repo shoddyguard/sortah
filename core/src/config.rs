@@ -5,13 +5,15 @@ use thiserror::Error;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    pub destination_root: PathBuf,
+    pub destination_root: Option<PathBuf>,
     #[serde(default = "default_case_insensitive")]
     pub case_insensitive: bool,
     #[serde(default = "default_extensions")]
     pub extensions: Vec<String>,
     /// Path to the alias database. Defaults to the platform data dir when absent.
     pub database: Option<PathBuf>,
+    #[serde(default)]
+    pub sort_in_place: bool,
 }
 
 fn default_case_insensitive() -> bool {
@@ -29,6 +31,8 @@ fn default_extensions() -> Vec<String> {
 pub enum ConfigError {
     #[error("Cannot determine default config directory")]
     NoConfigDir,
+    #[error("No destination configured: set `destination_root`, enable `sort_in_place`, or pass --dest")]
+    NoDestination,
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
     #[error("YAML parse error: {0}")]
@@ -40,8 +44,7 @@ impl Config {
     pub fn load(path: &Path) -> Result<Self, ConfigError> {
         let text = std::fs::read_to_string(path)?;
         let mut config: Config = serde_yaml::from_str(&text)?;
-        // Expand ~ in paths
-        config.destination_root = expand_tilde(config.destination_root);
+        config.destination_root = config.destination_root.map(expand_tilde);
         config.database = config.database.map(expand_tilde);
         config.validate()?;
         Ok(config)
@@ -49,7 +52,27 @@ impl Config {
 
     /// Validate that the config values are well-formed.
     pub fn validate(&self) -> Result<(), ConfigError> {
+        if self.destination_root.is_none() && !self.sort_in_place {
+            return Err(ConfigError::NoDestination);
+        }
         Ok(())
+    }
+
+    /// Resolve the effective destination root.
+    ///
+    /// Precedence: dest_override > sort_in_place (source dir) > destination_root.
+    pub fn resolve_dest_root(
+        &self,
+        source_dir: &Path,
+        dest_override: Option<&Path>,
+    ) -> Result<PathBuf, ConfigError> {
+        if let Some(d) = dest_override {
+            return Ok(d.to_path_buf());
+        }
+        if self.sort_in_place {
+            return Ok(source_dir.to_path_buf());
+        }
+        self.destination_root.clone().ok_or(ConfigError::NoDestination)
     }
 
     /// Default config file path for this platform.
@@ -81,6 +104,11 @@ impl Config {
 # Each image lands in: destination_root/<category>/<person>/filename
 # People with no category use an "Uncategorised" folder.
 destination_root: ~/Pictures/Friends
+
+# Sort into the current working directory instead of destination_root.
+# When true, files are organised in place: ./<category>/<person>/filename
+# Takes precedence over destination_root; --dest still overrides both.
+# sort_in_place: false
 
 # Whether to match aliases case-insensitively against filenames.
 # When true, alias "joeBloggs" matches a file containing "joebloggs".
@@ -140,5 +168,60 @@ mod tests {
         let f = write_config("destination_root: /tmp/dest\ncase_insensitive: false\n");
         let config = Config::load(f.path()).unwrap();
         assert!(!config.case_insensitive);
+    }
+
+    #[test]
+    fn sort_in_place_loads_without_destination_root() {
+        let f = write_config("sort_in_place: true\n");
+        let config = Config::load(f.path()).unwrap();
+        assert!(config.sort_in_place);
+        assert!(config.destination_root.is_none());
+    }
+
+    #[test]
+    fn no_dest_no_in_place_fails() {
+        let f = write_config("case_insensitive: true\n");
+        let err = Config::load(f.path()).unwrap_err();
+        assert!(matches!(err, ConfigError::NoDestination));
+    }
+
+    #[test]
+    fn resolve_dest_root_precedence() {
+        use std::path::Path;
+        let source = Path::new("/source");
+        let override_path = Path::new("/override");
+
+        let config_with_root = Config {
+            destination_root: Some(PathBuf::from("/root")),
+            case_insensitive: true,
+            extensions: vec![],
+            database: None,
+            sort_in_place: false,
+        };
+        assert_eq!(
+            config_with_root.resolve_dest_root(source, Some(override_path)).unwrap(),
+            override_path
+        );
+        assert_eq!(
+            config_with_root.resolve_dest_root(source, None).unwrap(),
+            PathBuf::from("/root")
+        );
+
+        let config_in_place = Config {
+            destination_root: None,
+            case_insensitive: true,
+            extensions: vec![],
+            database: None,
+            sort_in_place: true,
+        };
+        assert_eq!(
+            config_in_place.resolve_dest_root(source, None).unwrap(),
+            source
+        );
+        assert_eq!(
+            config_in_place.resolve_dest_root(source, Some(override_path)).unwrap(),
+            override_path,
+            "--dest must win over sort_in_place"
+        );
     }
 }

@@ -22,15 +22,18 @@ pub fn build_plan(
     source_dir: &Path,
     config: &Config,
     alias_map: &HashMap<String, PersonTarget>,
-    dest_override: Option<&Path>,
+    dest_root: &Path,
 ) -> Result<Plan, EngineError> {
-    let dest_root = dest_override.unwrap_or(&config.destination_root);
-
     let extensions: HashSet<String> =
         config.extensions.iter().map(|e| e.to_lowercase()).collect();
 
     let mut plan = Plan::default();
     let mut reserved: HashSet<PathBuf> = HashSet::new();
+
+    // Only skip files already under dest_root when it is nested inside source_dir.
+    // When sorting in place (dest_root == source_dir) nothing is blanket-skipped;
+    // already-sorted files are caught by duplicate detection below.
+    let dest_is_nested = dest_root != source_dir && dest_root.starts_with(source_dir);
 
     for entry in WalkDir::new(source_dir)
         .min_depth(1)
@@ -40,7 +43,7 @@ pub fn build_plan(
     {
         let path = entry.path();
 
-        if path.starts_with(dest_root) {
+        if dest_is_nested && path.starts_with(dest_root) {
             continue;
         }
 
@@ -187,12 +190,13 @@ mod tests {
         std::fs::write(path, content).unwrap();
     }
 
-    fn test_config(dest: &Path) -> Config {
+    fn test_config() -> Config {
         Config {
-            destination_root: dest.to_path_buf(),
+            destination_root: None,
             case_insensitive: true,
             extensions: vec!["jpg".into(), "png".into()],
             database: None,
+            sort_in_place: false,
         }
     }
 
@@ -203,8 +207,8 @@ mod tests {
         write_file(&inbox.path().join("joebloggs-20251203.jpg"), b"img");
 
         let map = alias_map(&[("joebloggs", "Joe Bloggs", Some("Friends"))]);
-        let config = test_config(dest.path());
-        let plan = build_plan(inbox.path(), &config, &map, None).unwrap();
+        let config = test_config();
+        let plan = build_plan(inbox.path(), &config, &map, dest.path()).unwrap();
 
         assert_eq!(plan.actions.len(), 1);
         assert!(matches!(plan.actions[0], PlannedAction::Move(_)));
@@ -217,8 +221,8 @@ mod tests {
         write_file(&inbox.path().join("joebloggs-20251203.jpg"), b"img");
 
         let map = alias_map(&[("joebloggs", "Joe Bloggs", Some("Friends"))]);
-        let config = test_config(dest.path());
-        let plan = build_plan(inbox.path(), &config, &map, None).unwrap();
+        let config = test_config();
+        let plan = build_plan(inbox.path(), &config, &map, dest.path()).unwrap();
 
         if let PlannedAction::Move(m) = &plan.actions[0] {
             let expected = dest.path().join("Friends").join("Joe Bloggs").join("joebloggs-20251203.jpg");
@@ -235,8 +239,8 @@ mod tests {
         write_file(&inbox.path().join("janedoe-20251203.jpg"), b"img");
 
         let map = alias_map(&[("janedoe", "Jane Doe", None)]);
-        let config = test_config(dest.path());
-        let plan = build_plan(inbox.path(), &config, &map, None).unwrap();
+        let config = test_config();
+        let plan = build_plan(inbox.path(), &config, &map, dest.path()).unwrap();
 
         if let PlannedAction::Move(m) = &plan.actions[0] {
             let expected = dest.path().join("Uncategorised").join("Jane Doe").join("janedoe-20251203.jpg");
@@ -253,8 +257,8 @@ mod tests {
         write_file(&inbox.path().join("unknown-20251203.jpg"), b"img");
 
         let map = alias_map(&[("joebloggs", "Joe Bloggs", None)]);
-        let config = test_config(dest.path());
-        let plan = build_plan(inbox.path(), &config, &map, None).unwrap();
+        let config = test_config();
+        let plan = build_plan(inbox.path(), &config, &map, dest.path()).unwrap();
 
         assert!(matches!(
             plan.actions[0],
@@ -272,8 +276,8 @@ mod tests {
             ("joe", "Joe Bloggs", None),
             ("joe-bloggs", "Jane Doe", None),
         ]);
-        let config = test_config(dest.path());
-        let plan = build_plan(inbox.path(), &config, &map, None).unwrap();
+        let config = test_config();
+        let plan = build_plan(inbox.path(), &config, &map, dest.path()).unwrap();
 
         assert!(matches!(
             plan.actions[0],
@@ -293,8 +297,8 @@ mod tests {
         );
 
         let map = alias_map(&[("joebloggs", "Joe Bloggs", Some("Friends"))]);
-        let config = test_config(dest.path());
-        let plan = build_plan(inbox.path(), &config, &map, None).unwrap();
+        let config = test_config();
+        let plan = build_plan(inbox.path(), &config, &map, dest.path()).unwrap();
 
         assert!(matches!(
             plan.actions[0],
@@ -313,8 +317,8 @@ mod tests {
         );
 
         let map = alias_map(&[("joebloggs", "Joe Bloggs", Some("Friends"))]);
-        let config = test_config(dest.path());
-        let plan = build_plan(inbox.path(), &config, &map, None).unwrap();
+        let config = test_config();
+        let plan = build_plan(inbox.path(), &config, &map, dest.path()).unwrap();
 
         if let PlannedAction::Move(m) = &plan.actions[0] {
             let name = m.dst.file_name().unwrap().to_str().unwrap();
@@ -331,8 +335,8 @@ mod tests {
         write_file(&inbox.path().join("joebloggs-20251203.jpg"), b"img");
 
         let map = alias_map(&[("joebloggs", "Joe Bloggs", Some("Friends"))]);
-        let config = test_config(dest.path());
-        let plan = build_plan(inbox.path(), &config, &map, None).unwrap();
+        let config = test_config();
+        let plan = build_plan(inbox.path(), &config, &map, dest.path()).unwrap();
         let report = execute_plan(&plan);
 
         assert_eq!(report.moved(), 1);
@@ -352,9 +356,60 @@ mod tests {
         write_file(&inbox.path().join("joebloggs-20251203.txt"), b"text");
 
         let map = alias_map(&[("joebloggs", "Joe Bloggs", None)]);
-        let config = test_config(dest.path());
-        let plan = build_plan(inbox.path(), &config, &map, None).unwrap();
+        let config = test_config();
+        let plan = build_plan(inbox.path(), &config, &map, dest.path()).unwrap();
 
         assert!(plan.actions.is_empty());
+    }
+
+    #[test]
+    fn sort_in_place_plans_move_into_source() {
+        let dir = tempdir().unwrap();
+        write_file(&dir.path().join("joebloggs-20251203.jpg"), b"img");
+
+        let map = alias_map(&[("joebloggs", "Joe Bloggs", Some("Friends"))]);
+        let config = test_config();
+        let plan = build_plan(dir.path(), &config, &map, dir.path()).unwrap();
+
+        assert_eq!(plan.actions.len(), 1);
+        if let PlannedAction::Move(m) = &plan.actions[0] {
+            let expected = dir.path().join("Friends").join("Joe Bloggs").join("joebloggs-20251203.jpg");
+            assert_eq!(m.dst, expected);
+        } else {
+            panic!("expected Move action");
+        }
+    }
+
+    #[test]
+    fn sort_in_place_rerun_skips_already_sorted() {
+        let dir = tempdir().unwrap();
+        let content = b"image bytes";
+        write_file(
+            &dir.path().join("Friends").join("Joe Bloggs").join("joebloggs-20251203.jpg"),
+            content,
+        );
+
+        let map = alias_map(&[("joebloggs", "Joe Bloggs", Some("Friends"))]);
+        let config = test_config();
+        let plan = build_plan(dir.path(), &config, &map, dir.path()).unwrap();
+
+        assert!(matches!(
+            plan.actions[0],
+            PlannedAction::Skip { reason: SkipReason::Duplicate, .. }
+        ));
+    }
+
+    #[test]
+    fn nested_separate_dest_still_skipped() {
+        let source = tempdir().unwrap();
+        let dest = source.path().join("sorted");
+        std::fs::create_dir_all(&dest).unwrap();
+        write_file(&dest.join("joebloggs-already.jpg"), b"pre-sorted");
+
+        let map = alias_map(&[("joebloggs", "Joe Bloggs", Some("Friends"))]);
+        let config = test_config();
+        let plan = build_plan(source.path(), &config, &map, &dest).unwrap();
+
+        assert!(plan.actions.is_empty(), "pre-sorted file in nested dest should be skipped");
     }
 }
