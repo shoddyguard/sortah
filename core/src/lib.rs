@@ -5,4 +5,4 @@ pub mod report;
 pub mod store;
 
 pub use config::{Config, ConfigError};
-pub use store::{Store, StoreError};
+pub use store::{PersonTarget, Store, StoreError};

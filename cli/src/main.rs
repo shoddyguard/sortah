@@ -70,7 +70,6 @@ fn handle_config(cmd: ConfigCommand, config_path: Option<PathBuf>) -> Result<()>
                     .map(|p| p.display().to_string())
                     .unwrap_or_else(|| "(unknown)".into())
             );
-            // Try to read the database path from the config if it exists.
             let db_display = config_path
                 .as_deref()
                 .and_then(|p| Config::load(p).ok())
@@ -91,9 +90,11 @@ fn handle_config(cmd: ConfigCommand, config_path: Option<PathBuf>) -> Result<()>
             let store = open_store(&config)?;
             let people = store.list_people()?;
             let aliases = store.list_aliases(None)?;
+            let with_category = people.iter().filter(|p| p.category.is_some()).count();
             println!("Database OK");
-            println!("  people:  {}", people.len());
-            println!("  aliases: {}", aliases.len());
+            println!("  people:           {}", people.len());
+            println!("  with category:    {}", with_category);
+            println!("  aliases:          {}", aliases.len());
 
             if config.case_insensitive {
                 let collisions = store.find_case_collisions()?;
@@ -132,7 +133,6 @@ fn handle_sort(args: cli::SortArgs, config_path: Option<PathBuf>) -> Result<()> 
         build_plan(&cwd, &config, &alias_map, dest_override).context("Failed to build plan")?;
     let summary = plan.summary();
 
-    // ---- Print summary ----
     println!("Sorting: {}", cwd.display());
     println!();
     println!("  Files to move:     {}", summary.to_move);
@@ -178,7 +178,6 @@ fn handle_sort(args: cli::SortArgs, config_path: Option<PathBuf>) -> Result<()> 
         return Ok(());
     }
 
-    // ---- Confirm ----
     let proceed = if args.yes {
         true
     } else {
@@ -194,7 +193,6 @@ fn handle_sort(args: cli::SortArgs, config_path: Option<PathBuf>) -> Result<()> 
         return Ok(());
     }
 
-    // ---- Execute ----
     let report = execute_plan(&plan);
 
     println!("Done. Moved {} file(s).", report.moved());
@@ -214,13 +212,23 @@ fn handle_person(cmd: PersonCommand, config_path: Option<PathBuf>) -> Result<()>
     let config = load_config(config_path)?;
     let store = open_store(&config)?;
     match cmd {
-        PersonCommand::Add { name } => {
-            store.add_person(&name)?;
-            println!("Added person: {}", name);
+        PersonCommand::Add { name, category } => {
+            store.add_person(&name, category.as_deref())?;
+            match &category {
+                Some(cat) => println!("Added person: {} [{}]", name, cat),
+                None => println!("Added person: {} [Uncategorised]", name),
+            }
         }
         PersonCommand::Rm { name } => {
             store.remove_person(&name)?;
             println!("Removed: {}", name);
+        }
+        PersonCommand::SetCategory { name, category } => {
+            store.set_category(&name, category.as_deref())?;
+            match &category {
+                Some(cat) => println!("Set category for '{}' to '{}'", name, cat),
+                None => println!("Cleared category for '{}'", name),
+            }
         }
     }
     Ok(())
@@ -247,8 +255,10 @@ fn handle_list(args: cli::ListArgs, config_path: Option<PathBuf>) -> Result<()> 
     let store = open_store(&config)?;
 
     if let Some(ref person) = args.person {
+        let p = store.get_person(person)?;
+        let cat = p.category.as_deref().unwrap_or("Uncategorised");
+        println!("{} [{}]:", person, cat);
         let aliases = store.list_aliases(Some(person))?;
-        println!("{}:", person);
         if aliases.is_empty() {
             println!("  (no aliases)");
         } else {
@@ -264,8 +274,9 @@ fn handle_list(args: cli::ListArgs, config_path: Option<PathBuf>) -> Result<()> 
             return Ok(());
         }
         for person in &people {
+            let cat = person.category.as_deref().unwrap_or("Uncategorised");
+            println!("{} [{}]", person.name, cat);
             let aliases = store.list_aliases(Some(&person.name))?;
-            println!("{}", person.name);
             if aliases.is_empty() {
                 println!("  (no aliases)");
             } else {

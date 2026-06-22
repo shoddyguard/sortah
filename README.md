@@ -51,8 +51,10 @@ sortah config init             Write starter config and create database
 sortah config path             Print config and database paths
 sortah config validate         Validate config and report any issues
 
-sortah person add <name>       Add a person
-sortah person rm <name>        Remove a person (and their aliases)
+sortah person add <name>                    Add a person
+sortah person add <name> --category <cat>   Add a person in a category
+sortah person rm <name>                     Remove a person (and their aliases)
+sortah person set-category <name> <cat>     Set (or clear) a person's category
 
 sortah alias add <name> <alias>  Map an alias to a person
 sortah alias rm <alias>          Remove an alias
@@ -92,11 +94,33 @@ extensions: [jpg, jpeg, png, gif, webp, mp4]
 # database: ~/.local/share/sortah/mappings.db
 ```
 
+## Categories
+
+Each person can belong to a category. Images are placed in `destination_root/<category>/<name>/` instead of directly under `destination_root/<name>/`. People with no category fall back to an `Uncategorised` folder.
+
+```sh
+# Add a person with a category
+sortah person add "Joe Bloggs" --category Friends
+
+# Change an existing person's category
+sortah person set-category "Joe Bloggs" Family
+
+# Clear a category (person moves back to Uncategorised)
+sortah person set-category "Joe Bloggs"
+
+# List shows the category alongside each person
+sortah list
+# Joe Bloggs [Friends]
+#   joeBloggs
+# Jane Doe [Uncategorised]
+#   (no aliases)
+```
+
 ## Managing people and aliases
 
 ```sh
-# Add a person
-sortah person add "Joe Bloggs"
+# Add a person (optional: with a category)
+sortah person add "Joe Bloggs" --category Friends
 
 # Add their username aliases (stored exactly as typed)
 sortah alias add "Joe Bloggs" joeBloggs
@@ -116,13 +140,15 @@ sortah list --person "Joe Bloggs"
 
 ## CSV bulk import / export
 
-One row per person: the name followed by all their aliases as additional columns.
+One row per person: an optional category, the name, then all their aliases as additional columns.
 
 ```csv
-name,aliases
-Joe Bloggs,joeBloggs,joe_bloggs,jblgs
-Jane Doe,janedoe,jane.d
+category,name,aliases
+Friends,Joe Bloggs,joeBloggs,joe_bloggs,jblgs
+,Jane Doe,janedoe,jane.d
 ```
+
+Leave the category cell empty for people with no category. The legacy format (first header `name`) is also accepted when importing; categories will be left unset.
 
 ```sh
 sortah import people.csv     # create people and aliases in bulk
@@ -137,9 +163,8 @@ Import is idempotent: exact-duplicate aliases are skipped.
 
 | File situation | Action |
 |---|---|
-| Username matches an alias | Planned for move to `destination_root/<name>/` |
+| Username matches an alias | Planned for move to `destination_root/<category>/<name>/` |
 | Username not in mapping | Left in place, reported |
-| Filename does not match the regex | Left in place, reported |
 | Destination file is identical | Skipped (duplicate) |
 | Destination file differs (name clash) | Renamed `file (2).jpg`, `file (3).jpg`, etc. |
 

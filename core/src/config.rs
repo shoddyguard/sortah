@@ -77,7 +77,9 @@ impl Config {
         let template = r#"# sortah configuration
 # Edit this file freely — sortah reads it on every run.
 
-# Where sorted images will be placed. Each person gets a subdirectory here.
+# Where sorted images will be placed.
+# Each image lands in: destination_root/<category>/<person>/filename
+# People with no category use an "Uncategorised" folder.
 destination_root: ~/Pictures/Friends
 
 # Whether to match aliases case-insensitively against filenames.
