@@ -214,19 +214,21 @@ fn register_people_callbacks(window: &AppWindow, state: Rc<RefCell<AppState>>) {
         window.on_people_select(move |idx| {
             let Some(win) = weak.upgrade() else { return };
             let st = state2.borrow();
-            // Look up the name from the current list model
             let people_model = win.get_people_list();
             let count = people_model.row_count();
             if idx < 0 || idx as usize >= count {
                 win.set_people_sel(-1);
                 win.set_people_sel_name("".into());
+                win.set_people_sel_category("".into());
                 win.set_alias_list(models::aliases_to_model(&[]));
                 return;
             }
             let row = people_model.row_data(idx as usize).unwrap_or_default();
             let name = row.name.to_string();
+            let category = row.category.to_string();
             win.set_people_sel(idx);
             win.set_people_sel_name(name.clone().into());
+            win.set_people_sel_category(category.into());
             refresh_aliases(&win, &st, &name);
         });
     }

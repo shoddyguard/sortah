@@ -45,6 +45,7 @@ export component AppWindow inherits Window {
     in-out property <[PersonRow]> people-list: [];
     in-out property <int>         people-sel: -1;
     in-out property <string>      people-sel-name: "";
+    in-out property <string>      people-sel-category: "";
     in-out property <[AliasRow]>  alias-list: [];
     in-out property <string>      people-status: "";
 
@@ -337,19 +338,18 @@ export component AppWindow inherits Window {
                     // Set category (for selected person)
                     if root.people-sel >= 0: VerticalLayout {
                         spacing: 4px;
-                        property <string> edit-cat;
                         Text { text: "Category"; font-size: 12px; color: Palette.foreground; }
                         HorizontalLayout {
                             spacing: 4px;
                             LineEdit {
                                 horizontal-stretch: 1;
-                                text <=> edit-cat;
+                                text <=> root.people-sel-category;
                                 placeholder-text: "Uncategorised";
                             }
                             Button {
                                 text: "Set";
                                 clicked => {
-                                    root.people-set-category(root.people-sel-name, edit-cat);
+                                    root.people-set-category(root.people-sel-name, root.people-sel-category);
                                 }
                             }
                         }
