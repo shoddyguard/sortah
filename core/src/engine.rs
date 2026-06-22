@@ -1,6 +1,7 @@
 use crate::config::Config;
 use crate::fsutil::{files_identical, find_free_path, move_file, sanitise_dir_name};
 use crate::report::{ActionOutcome, ExecutionReport, Plan, PlannedAction, PlannedMove, SkipReason};
+use crate::store::PersonTarget;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -16,11 +17,11 @@ pub enum EngineError {
 ///
 /// No files are moved; the returned `Plan` describes every intended action.
 /// `alias_map` must be keyed by normalised alias (already lowercased when
-/// `config.case_insensitive` is true) and map to the person name.
+/// `config.case_insensitive` is true) and map to a `PersonTarget`.
 pub fn build_plan(
     source_dir: &Path,
     config: &Config,
-    alias_map: &HashMap<String, String>,
+    alias_map: &HashMap<String, PersonTarget>,
     dest_override: Option<&Path>,
 ) -> Result<Plan, EngineError> {
     let dest_root = dest_override.unwrap_or(&config.destination_root);
@@ -29,7 +30,6 @@ pub fn build_plan(
         config.extensions.iter().map(|e| e.to_lowercase()).collect();
 
     let mut plan = Plan::default();
-    // Track destination paths already reserved by this plan to avoid double-booking.
     let mut reserved: HashSet<PathBuf> = HashSet::new();
 
     for entry in WalkDir::new(source_dir)
@@ -40,12 +40,10 @@ pub fn build_plan(
     {
         let path = entry.path();
 
-        // Skip files that already live under the destination root.
         if path.starts_with(dest_root) {
             continue;
         }
 
-        // Filter by extension.
         let ext_ok = path
             .extension()
             .and_then(|e| e.to_str())
@@ -60,27 +58,28 @@ pub fn build_plan(
             None => continue,
         };
 
-        // Substring match: find any alias that appears in the filename.
-        // alias_map keys are already normalised (lowercased if case_insensitive).
         let haystack = if config.case_insensitive {
             filename.to_lowercase()
         } else {
             filename.to_string()
         };
 
-        let mut matched_person: Option<&str> = None;
+        let mut matched_target: Option<&PersonTarget> = None;
         let mut ambiguous = false;
-        for (alias, person) in alias_map {
+        for (alias, target) in alias_map {
             if haystack.contains(alias.as_str()) {
-                match matched_person {
-                    None => matched_person = Some(person),
-                    Some(existing) if existing == person => {}
-                    Some(_) => { ambiguous = true; break; }
+                match matched_target {
+                    None => matched_target = Some(target),
+                    Some(existing) if existing.name == target.name => {}
+                    Some(_) => {
+                        ambiguous = true;
+                        break;
+                    }
                 }
             }
         }
 
-        let name = match (matched_person, ambiguous) {
+        let target = match (matched_target, ambiguous) {
             (_, true) | (None, _) => {
                 plan.actions.push(PlannedAction::Skip {
                     src: path.to_path_buf(),
@@ -88,13 +87,17 @@ pub fn build_plan(
                 });
                 continue;
             }
-            (Some(n), false) => n.to_string(),
+            (Some(t), false) => t,
         };
 
-        let safe_dir = sanitise_dir_name(&name);
-        let desired_dst = dest_root.join(&safe_dir).join(filename);
+        let category = target.category.as_deref().unwrap_or("Uncategorised");
+        let category_dir = sanitise_dir_name(category);
+        let person_dir = sanitise_dir_name(&target.name);
+        let desired_dst = dest_root
+            .join(&category_dir)
+            .join(&person_dir)
+            .join(filename);
 
-        // Resolve clashes with existing files or earlier plan entries.
         if desired_dst.exists() {
             match files_identical(path, &desired_dst) {
                 Ok(true) => {
@@ -110,12 +113,11 @@ pub fn build_plan(
                     plan.actions.push(PlannedAction::Move(PlannedMove {
                         src: path.to_path_buf(),
                         dst,
-                        name,
+                        name: target.name.clone(),
                     }));
                 }
                 Err(e) => {
                     eprintln!("Warning: cannot compare '{}': {e}", path.display());
-                    // Leave file in place rather than risk overwriting.
                     continue;
                 }
             }
@@ -125,7 +127,7 @@ pub fn build_plan(
             plan.actions.push(PlannedAction::Move(PlannedMove {
                 src: path.to_path_buf(),
                 dst,
-                name,
+                name: target.name.clone(),
             }));
         }
     }
@@ -163,10 +165,18 @@ mod tests {
     use std::collections::HashMap;
     use tempfile::tempdir;
 
-    fn alias_map(entries: &[(&str, &str)]) -> HashMap<String, String> {
+    fn alias_map(entries: &[(&str, &str, Option<&str>)]) -> HashMap<String, PersonTarget> {
         entries
             .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .map(|(alias, name, cat)| {
+                (
+                    alias.to_string(),
+                    PersonTarget {
+                        name: name.to_string(),
+                        category: cat.map(str::to_string),
+                    },
+                )
+            })
             .collect()
     }
 
@@ -192,7 +202,7 @@ mod tests {
         let dest = tempdir().unwrap();
         write_file(&inbox.path().join("joebloggs-20251203.jpg"), b"img");
 
-        let map = alias_map(&[("joebloggs", "Joe Bloggs")]);
+        let map = alias_map(&[("joebloggs", "Joe Bloggs", Some("Friends"))]);
         let config = test_config(dest.path());
         let plan = build_plan(inbox.path(), &config, &map, None).unwrap();
 
@@ -201,12 +211,48 @@ mod tests {
     }
 
     #[test]
+    fn file_lands_in_category_folder() {
+        let inbox = tempdir().unwrap();
+        let dest = tempdir().unwrap();
+        write_file(&inbox.path().join("joebloggs-20251203.jpg"), b"img");
+
+        let map = alias_map(&[("joebloggs", "Joe Bloggs", Some("Friends"))]);
+        let config = test_config(dest.path());
+        let plan = build_plan(inbox.path(), &config, &map, None).unwrap();
+
+        if let PlannedAction::Move(m) = &plan.actions[0] {
+            let expected = dest.path().join("Friends").join("Joe Bloggs").join("joebloggs-20251203.jpg");
+            assert_eq!(m.dst, expected);
+        } else {
+            panic!("expected Move action");
+        }
+    }
+
+    #[test]
+    fn no_category_uses_uncategorised_folder() {
+        let inbox = tempdir().unwrap();
+        let dest = tempdir().unwrap();
+        write_file(&inbox.path().join("janedoe-20251203.jpg"), b"img");
+
+        let map = alias_map(&[("janedoe", "Jane Doe", None)]);
+        let config = test_config(dest.path());
+        let plan = build_plan(inbox.path(), &config, &map, None).unwrap();
+
+        if let PlannedAction::Move(m) = &plan.actions[0] {
+            let expected = dest.path().join("Uncategorised").join("Jane Doe").join("janedoe-20251203.jpg");
+            assert_eq!(m.dst, expected);
+        } else {
+            panic!("expected Move action");
+        }
+    }
+
+    #[test]
     fn unknown_username_leaves_file_in_place() {
         let inbox = tempdir().unwrap();
         let dest = tempdir().unwrap();
         write_file(&inbox.path().join("unknown-20251203.jpg"), b"img");
 
-        let map = alias_map(&[("joebloggs", "Joe Bloggs")]);
+        let map = alias_map(&[("joebloggs", "Joe Bloggs", None)]);
         let config = test_config(dest.path());
         let plan = build_plan(inbox.path(), &config, &map, None).unwrap();
 
@@ -220,10 +266,12 @@ mod tests {
     fn ambiguous_match_leaves_file_in_place() {
         let inbox = tempdir().unwrap();
         let dest = tempdir().unwrap();
-        // filename contains both "joe" (Joe Bloggs) and "joe-bloggs" (Jane Doe)
         write_file(&inbox.path().join("joe-bloggs-20251203.jpg"), b"img");
 
-        let map = alias_map(&[("joe", "Joe Bloggs"), ("joe-bloggs", "Jane Doe")]);
+        let map = alias_map(&[
+            ("joe", "Joe Bloggs", None),
+            ("joe-bloggs", "Jane Doe", None),
+        ]);
         let config = test_config(dest.path());
         let plan = build_plan(inbox.path(), &config, &map, None).unwrap();
 
@@ -240,11 +288,11 @@ mod tests {
         let content = b"image bytes";
         write_file(&inbox.path().join("joebloggs-20251203.jpg"), content);
         write_file(
-            &dest.path().join("Joe Bloggs").join("joebloggs-20251203.jpg"),
+            &dest.path().join("Friends").join("Joe Bloggs").join("joebloggs-20251203.jpg"),
             content,
         );
 
-        let map = alias_map(&[("joebloggs", "Joe Bloggs")]);
+        let map = alias_map(&[("joebloggs", "Joe Bloggs", Some("Friends"))]);
         let config = test_config(dest.path());
         let plan = build_plan(inbox.path(), &config, &map, None).unwrap();
 
@@ -260,11 +308,11 @@ mod tests {
         let dest = tempdir().unwrap();
         write_file(&inbox.path().join("joebloggs-20251203.jpg"), b"new image");
         write_file(
-            &dest.path().join("Joe Bloggs").join("joebloggs-20251203.jpg"),
+            &dest.path().join("Friends").join("Joe Bloggs").join("joebloggs-20251203.jpg"),
             b"existing image",
         );
 
-        let map = alias_map(&[("joebloggs", "Joe Bloggs")]);
+        let map = alias_map(&[("joebloggs", "Joe Bloggs", Some("Friends"))]);
         let config = test_config(dest.path());
         let plan = build_plan(inbox.path(), &config, &map, None).unwrap();
 
@@ -282,7 +330,7 @@ mod tests {
         let dest = tempdir().unwrap();
         write_file(&inbox.path().join("joebloggs-20251203.jpg"), b"img");
 
-        let map = alias_map(&[("joebloggs", "Joe Bloggs")]);
+        let map = alias_map(&[("joebloggs", "Joe Bloggs", Some("Friends"))]);
         let config = test_config(dest.path());
         let plan = build_plan(inbox.path(), &config, &map, None).unwrap();
         let report = execute_plan(&plan);
@@ -291,6 +339,7 @@ mod tests {
         assert!(!inbox.path().join("joebloggs-20251203.jpg").exists());
         assert!(dest
             .path()
+            .join("Friends")
             .join("Joe Bloggs")
             .join("joebloggs-20251203.jpg")
             .exists());
@@ -302,7 +351,7 @@ mod tests {
         let dest = tempdir().unwrap();
         write_file(&inbox.path().join("joebloggs-20251203.txt"), b"text");
 
-        let map = alias_map(&[("joebloggs", "Joe Bloggs")]);
+        let map = alias_map(&[("joebloggs", "Joe Bloggs", None)]);
         let config = test_config(dest.path());
         let plan = build_plan(inbox.path(), &config, &map, None).unwrap();
 

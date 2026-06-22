@@ -36,7 +36,7 @@ pub enum Command {
     /// List people and their aliases
     List(ListArgs),
 
-    /// Bulk-import aliases from a CSV file (headers: name,alias)
+    /// Bulk-import aliases from a CSV file (headers: category,name,alias or name,alias)
     Import(ImportArgs),
 
     /// Export all aliases to a CSV file
@@ -74,11 +74,21 @@ pub enum PersonCommand {
     Add {
         /// The name directory name for this person
         name: String,
+        /// Category folder this person's images are sorted into
+        #[arg(long)]
+        category: Option<String>,
     },
     /// Remove a person and all their aliases
     Rm {
         /// The name name of the person to remove
         name: String,
+    },
+    /// Set (or clear) the category for a person
+    SetCategory {
+        /// The name of the person
+        name: String,
+        /// New category value (omit to clear)
+        category: Option<String>,
     },
 }
 
@@ -107,7 +117,7 @@ pub struct ListArgs {
 
 #[derive(Args, Debug)]
 pub struct ImportArgs {
-    /// CSV file to import (must have headers: name,alias)
+    /// CSV file to import (header: category,name,alias... or name,alias...)
     pub file: PathBuf,
 }
 
