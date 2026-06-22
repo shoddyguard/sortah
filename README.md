@@ -12,12 +12,31 @@ One person can have many usernames (`joeBloggs`, `joe_bloggs`, `jblgs`); all the
 - Shows a plan before moving anything, then prompts for confirmation (or `--yes` to skip)
 - Identical duplicates are skipped; name clashes are automatically renamed
 - Bulk import/export via CSV
+- Native GUI (runs by default) or pure CLI via subcommands
 
 ## Installation
 
 You can use the installation scripts in the `scripts/` directory to have the application installed on your machine or simply download the latest binary from the [Releases](../../releases) page.
 
 ## Quick start
+
+### GUI (default)
+
+Run `sortah` with no arguments to open the GUI:
+
+```sh
+sortah
+```
+
+The GUI has three views accessible from the left sidebar:
+
+- **Sort** — pick a source folder, preview the plan, then sort. The preview shows the same summary as `sortah sort --verbose`.
+- **People & Aliases** — add/remove people and their username aliases, set categories, and import/export CSV.
+- **Config** — edit `destination_root`, `sort_in_place`, `case_insensitive`, and extensions; save, reload, or validate the config file.
+
+On first run with no config file the GUI starts with safe defaults (`sort_in_place: true`). Go to the Config view to point it at your folders and save.
+
+### CLI
 
 ```sh
 # 1. Write a starter config and create an empty database
@@ -71,6 +90,12 @@ Global flags (work with every command):
 ```
 -c, --config <path>   Use this config file instead of the default
     SORTAH_CONFIG      Environment variable equivalent of --config
+```
+
+The GUI is included in the default build. To compile a CLI-only binary (no GUI dependency, smaller binary):
+
+```sh
+cargo build --release --no-default-features
 ```
 
 ## Config file

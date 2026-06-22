@@ -7,7 +7,12 @@ edition.workspace = true
 name = "sortah"
 path = "src/main.rs"
 
+[features]
+default = ["gui"]
+gui = ["dep:sortah-gui"]
+
 [dependencies]
 sortah-core = { path = "../core" }
+sortah-gui = { path = "../gui", optional = true }
 clap = { version = "4", features = ["derive", "env"] }
 anyhow = "1"

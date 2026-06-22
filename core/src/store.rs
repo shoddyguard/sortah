@@ -13,6 +13,8 @@ pub enum StoreError {
     Csv(#[from] csv::Error),
     #[error("Person not found: '{0}'")]
     PersonNotFound(String),
+    #[error("Person already exists (case-insensitive match): '{0}'")]
+    DuplicatePerson(String),
     #[error("Alias already exists: '{0}'")]
     DuplicateAlias(String),
     #[error("Alias not found: '{0}'")]
@@ -114,19 +116,20 @@ impl Store {
     // ---- People ----
 
     pub fn add_person(&self, name: &str, category: Option<&str>) -> Result<i64, StoreError> {
+        // Reject names that differ only in case — directory names are case-insensitive on Windows.
+        let existing: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM people WHERE lower(name) = lower(?1)",
+            params![name],
+            |row| row.get(0),
+        )?;
+        if existing > 0 {
+            return Err(StoreError::DuplicatePerson(name.to_string()));
+        }
         self.conn
             .execute(
                 "INSERT INTO people (name, category) VALUES (?1, ?2)",
                 params![name, category],
-            )
-            .map_err(|e| match e {
-                rusqlite::Error::SqliteFailure(ref err, _)
-                    if err.code == rusqlite::ErrorCode::ConstraintViolation =>
-                {
-                    e.into()
-                }
-                other => StoreError::Sqlite(other),
-            })?;
+            )?;
         Ok(self.conn.last_insert_rowid())
     }
 
@@ -155,7 +158,7 @@ impl Store {
     pub fn list_people(&self) -> Result<Vec<Person>, StoreError> {
         let mut stmt = self
             .conn
-            .prepare("SELECT id, name, category FROM people ORDER BY name")?;
+            .prepare("SELECT id, name, category FROM people ORDER BY name COLLATE NOCASE")?;
         let people = stmt
             .query_map([], |row| {
                 Ok(Person {
