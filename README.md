@@ -81,7 +81,13 @@ Override with `--config <path>` or the `SORTAH_CONFIG` environment variable.
 
 ```yaml
 # Where sorted images will be placed. Each person gets a subdirectory here.
+# Optional when sort_in_place is true.
 destination_root: ~/Pictures/Friends
+
+# Sort into the current working directory instead of destination_root.
+# When true, files are organised in place: ./<category>/<person>/filename
+# Precedence: --dest flag > sort_in_place > destination_root
+# sort_in_place: false
 
 # Whether to match aliases case-insensitively against filenames.
 # When true, alias "joeBloggs" matches a file containing "joebloggs".

@@ -83,7 +83,11 @@ fn handle_config(cmd: ConfigCommand, config_path: Option<PathBuf>) -> Result<()>
         ConfigCommand::Validate => {
             let config = load_config(config_path)?;
             println!("Config OK");
-            println!("  destination_root: {}", config.destination_root.display());
+            match &config.destination_root {
+                Some(d) => println!("  destination_root: {}", d.display()),
+                None => println!("  destination_root: (none)"),
+            }
+            println!("  sort_in_place:    {}", config.sort_in_place);
             println!("  case_insensitive: {}", config.case_insensitive);
             println!("  extensions:       {}", config.extensions.join(", "));
 
@@ -127,13 +131,15 @@ fn handle_sort(args: cli::SortArgs, config_path: Option<PathBuf>) -> Result<()> 
     let alias_map = store.load_alias_map(config.case_insensitive)?;
 
     let cwd = std::env::current_dir().context("Cannot determine current directory")?;
-    let dest_override = args.dest.as_deref();
+    let dest_root = config
+        .resolve_dest_root(&cwd, args.dest.as_deref())
+        .context("Cannot determine destination")?;
 
-    let plan =
-        build_plan(&cwd, &config, &alias_map, dest_override).context("Failed to build plan")?;
+    let plan = build_plan(&cwd, &config, &alias_map, &dest_root).context("Failed to build plan")?;
     let summary = plan.summary();
 
-    println!("Sorting: {}", cwd.display());
+    println!("Sorting:     {}", cwd.display());
+    println!("Destination: {}", dest_root.display());
     println!();
     println!("  Files to move:     {}", summary.to_move);
     if summary.skip_duplicate > 0 {
