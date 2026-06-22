@@ -48,10 +48,13 @@ without touching `cli`. Do not move logic into `cli`.
 ## SQLite schema
 
 ```sql
-CREATE TABLE people  (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE);
+CREATE TABLE people  (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, category TEXT);
 CREATE TABLE aliases (alias TEXT PRIMARY KEY,
                       person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE);
 ```
+
+`category` is nullable. Databases created before this column was added are upgraded
+automatically by an additive `ALTER TABLE` migration in `Store::migrate()`.
 
 `aliases.alias` is the PRIMARY KEY — exact-duplicate aliases are rejected at insert time.
 Case-only collisions (e.g. `joeBloggs` vs `joebloggs`) are allowed in the schema but
@@ -71,7 +74,7 @@ two files in the same plan cannot be given the same renamed path.
 ```sh
 cargo build           # dev build
 cargo build --release # single static binary at target/release/sortah
-cargo test            # 28 unit + integration tests across core modules
+cargo test            # unit + integration tests across core modules
 ```
 
 No external runtime or system library is required: SQLite is compiled in via
