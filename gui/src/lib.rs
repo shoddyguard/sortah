@@ -14,12 +14,9 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 pub fn run(config_path: Option<PathBuf>) -> Result<()> {
-    let window = AppWindow::new().context("Failed to create window")?;
-
-    // Resolve the config file path
+    // Do all I/O before creating the window so it first appears fully initialised.
     let effective_config_path = config_path.or_else(Config::default_path);
 
-    // Load config, falling back to a safe default on any error
     let (config, config_status) = match effective_config_path
         .as_deref()
         .map(Config::load)
@@ -27,7 +24,7 @@ pub fn run(config_path: Option<PathBuf>) -> Result<()> {
     {
         Ok(Some(cfg)) => (cfg, String::new()),
         _ => {
-            let msg = "No config found — using defaults. Go to Config to set up.".to_string();
+            let msg = "No config found, using defaults. Go to Config to set up.".to_string();
             let default_cfg = Config {
                 destination_root: None,
                 sort_in_place: true,
@@ -42,7 +39,6 @@ pub fn run(config_path: Option<PathBuf>) -> Result<()> {
         }
     };
 
-    // Open (or create) the database
     let db_path = config
         .resolved_db_path()
         .or_else(Config::default_db_path)
@@ -56,14 +52,13 @@ pub fn run(config_path: Option<PathBuf>) -> Result<()> {
         current_plan: None,
     }));
 
-    // Initialise window properties
+    let window = AppWindow::new().context("Failed to create window")?;
+
     app::init_window(&window, &state, &config_status, &db_path);
 
-    // Spawn the worker thread and start the result-drain timer
     let (job_tx, result_rx) = worker::spawn();
     let _timer = app::setup_timer(&window, state.clone(), result_rx);
 
-    // Register all callbacks
     app::register_callbacks(&window, state, job_tx);
 
     window.run().context("Window error")?;

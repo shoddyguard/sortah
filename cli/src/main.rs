@@ -23,6 +23,27 @@ fn main() -> Result<()> {
 
 #[cfg(feature = "gui")]
 fn launch_gui(config: Option<PathBuf>) -> Result<()> {
+    use std::io::IsTerminal;
+
+    if std::io::stdin().is_terminal() {
+        let exe = std::env::current_exe().context("Cannot determine executable path")?;
+        let mut cmd = std::process::Command::new(exe);
+        if let Some(ref path) = config {
+            cmd.arg("--config").arg(path);
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            cmd.process_group(0);
+        }
+        cmd.stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .context("Failed to spawn detached GUI process")?;
+        return Ok(());
+    }
+
     sortah_gui::run(config).context("GUI error")
 }
 
